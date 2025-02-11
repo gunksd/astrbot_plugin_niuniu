@@ -9,7 +9,9 @@ from astrbot.api.all import *
 PLUGIN_DIR = os.path.join('data', 'plugins', 'astrbot_plugin_niuniu')
 if not os.path.exists(PLUGIN_DIR):
     os.makedirs(PLUGIN_DIR)
-NIUNIU_LENGTHS_FILE = os.path.join(PLUGIN_DIR, 'niuniu_lengths.yml')
+# 将牛牛长度文件路径设置到 astrbot_plugin_niuniu 之前的 data 文件夹
+NIUNIU_LENGTHS_FILE = os.path.join('data', 'niuniu_lengths.yml')
+NIUNIU_TEXTS_FILE = os.path.join(PLUGIN_DIR, 'niuniu_game_texts.yml')
 
 
 @register("niuniu_plugin", "长安某", "牛牛插件，包含注册牛牛、打胶、我的牛牛、比划比划、牛牛排行等功能", "2.2.0")
@@ -20,37 +22,68 @@ class NiuniuPlugin(Star):
             config = {}
         self.config = config
         self.niuniu_lengths = self._load_niuniu_lengths()
+        self.niuniu_texts = self._load_niuniu_texts()
         # 记录每个用户的上次打胶时间和冷却时长
         self.last_dajiao_time = {}
         # 记录每个群中每个用户在 10 分钟内主动邀请的人数，格式为 {group_id: {user_id: (last_time, invited_count)}}
         self.invite_count = {}
         # 记录每个群中每个用户发起比划的冷却信息，格式为 {group_id: {user_id: {target_id: last_time}}}
         self.last_compare_time = {}
+        # 初始化开关状态，默认为开
+        self.plugin_enabled = self.niuniu_lengths.get('plugin_enabled', True)
 
     def _create_niuniu_lengths_file(self):
         """创建 niuniu_lengths.yml 文件"""
         if not os.path.exists(NIUNIU_LENGTHS_FILE):
             with open(NIUNIU_LENGTHS_FILE, 'w', encoding='utf-8') as file:
-                yaml.dump({}, file, allow_unicode=True)
+                data = {'plugin_enabled': True}
+                yaml.dump(data, file, allow_unicode=True)
 
     def _load_niuniu_lengths(self):
-        """从 YAML 文件中加载牛牛长度数据"""
+        """从 YAML 文件中加载牛牛长度数据和开关状态"""
         self._create_niuniu_lengths_file()
-        try:
-            with open(NIUNIU_LENGTHS_FILE, 'r', encoding='utf-8') as file:
-                return yaml.safe_load(file) or {}
-        except FileNotFoundError:
-            return {}
-        except Exception:
-            return {}
+        encodings = ['utf-8', 'gbk2312']
+        for encoding in encodings:
+            try:
+                with open(NIUNIU_LENGTHS_FILE, 'r', encoding=encoding) as file:
+                    data = yaml.safe_load(file) or {}
+                    # 确保 plugin_enabled 键存在，默认为 True
+                    data.setdefault('plugin_enabled', True)
+                    return data
+            except UnicodeDecodeError:
+                continue
+            except FileNotFoundError:
+                return {'plugin_enabled': True}
+            except Exception:
+                return {'plugin_enabled': True}
+        return {'plugin_enabled': True}
+
+    def _load_niuniu_texts(self):
+        """从 YAML 文件中加载游戏文本数据"""
+        encodings = ['utf-8', 'gbk2312']
+        for encoding in encodings:
+            try:
+                with open(NIUNIU_TEXTS_FILE, 'r', encoding=encoding) as file:
+                    return yaml.safe_load(file) or {}
+            except UnicodeDecodeError:
+                continue
+            except FileNotFoundError:
+                return {}
+            except Exception:
+                return {}
+        return {}
 
     def _save_niuniu_lengths(self):
-        """将牛牛长度数据保存到 YAML 文件"""
-        try:
-            with open(NIUNIU_LENGTHS_FILE, 'w', encoding='utf-8') as file:
-                yaml.dump(self.niuniu_lengths, file, allow_unicode=True)
-        except Exception:
-            pass
+        """将牛牛长度数据和开关状态保存到 YAML 文件"""
+        encodings = ['utf-8', 'gbk2312']
+        for encoding in encodings:
+            try:
+                with open(NIUNIU_LENGTHS_FILE, 'w', encoding=encoding) as file:
+                    self.niuniu_lengths['plugin_enabled'] = self.plugin_enabled
+                    yaml.dump(self.niuniu_lengths, file, allow_unicode=True)
+                break
+            except Exception:
+                continue
 
     def get_niuniu_config(self):
         """获取牛牛相关配置"""
@@ -77,26 +110,35 @@ class NiuniuPlugin(Star):
 
         message_str = event.message_str.strip()
 
-        if message_str == "注册牛牛":
-            async for result in self.register_niuniu(event):
-                yield result
-        elif message_str == "打胶":
-            async for result in self.dajiao(event):
-                yield result
-        elif message_str == "我的牛牛":
-            async for result in self.my_niuniu(event):
-                yield result
-        elif message_str.startswith("比划比划"):
-            parts = message_str.split(maxsplit=1)
-            target_name = parts[1].strip() if len(parts) > 1 else None
-            async for result in self.compare_niuniu(event, target_name):
-                yield result
-        elif message_str == "牛牛排行":
-            async for result in self.niuniu_rank(event):
-                yield result
+        if message_str == "牛牛开":
+            self.plugin_enabled = True
+            self._save_niuniu_lengths()
+            yield event.plain_result("牛牛插件已开启。")
+        elif message_str == "牛牛关":
+            self.plugin_enabled = False
+            self._save_niuniu_lengths()
+            yield event.plain_result("牛牛插件已关闭，除了牛牛菜单，其他功能不可用。")
         elif message_str == "牛牛菜单":
             async for result in self.niuniu_menu(event):
                 yield result
+        elif self.plugin_enabled:
+            if message_str == "注册牛牛":
+                async for result in self.register_niuniu(event):
+                    yield result
+            elif message_str == "打胶":
+                async for result in self.dajiao(event):
+                    yield result
+            elif message_str == "我的牛牛":
+                async for result in self.my_niuniu(event):
+                    yield result
+            elif message_str.startswith("比划比划"):
+                parts = message_str.split(maxsplit=1)
+                target_name = parts[1].strip() if len(parts) > 1 else None
+                async for result in self.compare_niuniu(event, target_name):
+                    yield result
+            elif message_str == "牛牛排行":
+                async for result in self.niuniu_rank(event):
+                    yield result
 
         yield event
 
@@ -118,16 +160,22 @@ class NiuniuPlugin(Star):
                 min_length = config.get('min_length', 1)
                 max_length = config.get('max_length', 10)
                 length = random.randint(min_length, max_length)
+                # 固定硬度为 1
+                hardness = 1
                 self.niuniu_lengths[group_id][user_id] = {
                     "nickname": sender_nickname,
-                    "length": length
+                    "length": length,
+                    "hardness": hardness
                 }
                 self._save_niuniu_lengths()
-                yield event.plain_result(f"{sender_nickname}，注册成功，你的牛牛现在有{length} cm")
+                msg = self.niuniu_texts['register']['success'].format(nickname=sender_nickname, length=length, hardness=hardness)
+                yield event.plain_result(msg)
             else:
-                yield event.plain_result(f"{sender_nickname}，你已经注册过牛牛啦！")
+                msg = self.niuniu_texts['register']['already_registered'].format(nickname=sender_nickname)
+                yield event.plain_result(msg)
         else:
-            yield event.plain_result("该指令仅限群聊中使用。")
+            msg = self.niuniu_texts['register']['only_group']
+            yield event.plain_result(msg)
 
     async def dajiao(self, event: AstrMessageEvent):
         """打胶指令处理函数"""
@@ -144,98 +192,68 @@ class NiuniuPlugin(Star):
             # 十分钟内不允许打胶
             MIN_COOLDOWN = 10 * 60
             if time_diff < MIN_COOLDOWN:
-                cooldown_messages = [
-                    f"{sender_nickname}，你的牛牛还在疲惫状态呢，至少再歇 10 分钟呀！",
-                    f"{sender_nickname}，牛牛刚刚折腾完，还没缓过来，10 分钟内别再搞啦！",
-                    f"{sender_nickname}，牛牛累得直喘气，10 分钟内可经不起再折腾咯！",
-                    f"{sender_nickname}，牛牛正虚弱着呢，等 10 分钟让它恢复恢复吧！"
-                ]
-                yield event.plain_result(random.choice(cooldown_messages))
+                message = random.choice(self.niuniu_texts['dajiao']['cooldown']).format(nickname=sender_nickname)
+                yield event.plain_result(message)
                 return
 
-            # 超过十分钟但低于三十分钟，越接近十分钟越容易失败
+            # 超过十分钟但低于三十分钟
             THIRTY_MINUTES = 30 * 60
             if time_diff < THIRTY_MINUTES:
-                failure_probability = (THIRTY_MINUTES - time_diff) / (THIRTY_MINUTES - MIN_COOLDOWN)
-                config = self.get_niuniu_config()
-                min_change = config.get('min_change', -5)
-                max_change = config.get('max_change', 5)
-
-                increase_messages = [
-                    "{nickname}，你的牛牛还没完全恢复呢，但它潜力惊人，增长了{change}cm",
-                    "{nickname}，你冒险打胶，没想到牛牛小宇宙爆发，增长了{change}cm",
-                    "{nickname}，牛牛还软绵绵的，你却大胆尝试，结果增长了{change}cm"
-                ]
-                decrease_messages = [
-                    "{nickname}，你的牛牛还没恢复，你就急于打胶，导致它缩短了{change}cm",
-                    "{nickname}，你不顾牛牛疲惫，强行打胶，让它缩短了{change}cm",
-                    "{nickname}，牛牛还在虚弱期，你却折腾它，缩短了{change}cm"
-                ]
-                no_effect_messages = [
-                    "{nickname}，你的牛牛还没恢复，你打胶也没啥效果哦",
-                    "{nickname}，牛牛没缓过来，你这次打胶白费劲啦",
-                    "{nickname}，牛牛还没力气呢，打胶没作用"
-                ]
-
-                if self.check_probability(failure_probability):
-                    change = random.randint(min_change, 0)
+                # 10 - 30 分钟变长概率为 40%，变短概率为 30%，不变概率为 30%
+                if self.check_probability(0.4):
+                    config = self.get_niuniu_config()
+                    max_change = config.get('max_change', 6)
+                    change = random.randint(2, max_change)
+                    message = random.choice(self.niuniu_texts['dajiao']['increase']).format(nickname=sender_nickname, change=change)
+                elif self.check_probability(0.3):
+                    # 30 分钟内打胶失败，长度减少 1 - 4
+                    change = -random.randint(1, 4)
                     positive_change = -change
-                    message = random.choice(decrease_messages).format(nickname=sender_nickname, change=positive_change)
+                    message = random.choice(self.niuniu_texts['dajiao']['decrease']).format(nickname=sender_nickname, change=positive_change)
                 else:
-                    change = random.randint(0, max_change)
-                    if change > 0:
-                        message = random.choice(increase_messages).format(nickname=sender_nickname, change=change)
-                    else:
-                        message = random.choice(no_effect_messages).format(nickname=sender_nickname)
+                    message = random.choice(self.niuniu_texts['dajiao']['no_effect']).format(nickname=sender_nickname)
+                    change = 0
 
                 user_info["length"] += change
                 if user_info["length"] < 1:
                     user_info["length"] = 1
+
                 self._save_niuniu_lengths()
                 # 更新上次打胶时间
                 self.last_dajiao_time[user_id] = current_time
                 yield event.plain_result(self.format_niuniu_message(message, user_info["length"]))
                 return
 
-            # 三十分钟后正常判定
-            config = self.get_niuniu_config()
-            min_change = config.get('min_change', -5)
-            max_change = config.get('max_change', 5)
-
-            increase_messages = [
-                "{nickname}，你嘿咻嘿咻一下，牛牛如同雨后春笋般茁壮成长，增长了{change}cm呢",
-                "{nickname}，这一波操作猛如虎，牛牛蹭蹭地长了{change}cm，厉害啦！",
-                "{nickname}，打胶效果显著，牛牛一下子就长了{change}cm，前途无量啊！"
-            ]
-            decrease_messages = [
-                "{nickname}，哎呀，打胶过度，牛牛像被霜打的茄子，缩短了{change}cm呢",
-                "{nickname}，用力过猛，牛牛惨遭重创，缩短了{change}cm，心疼它三秒钟",
-                "{nickname}，这波操作不太妙，牛牛缩水了{change}cm，下次悠着点啊！"
-            ]
-            no_effect_messages = [
-                "{nickname}，这次打胶好像没什么效果哦，再接再厉吧",
-                "{nickname}，打了个寂寞，牛牛没啥变化，再试试呗",
-                "{nickname}，这波打胶无功而返，牛牛依旧岿然不动"
-            ]
-
-            change = random.randint(min_change, max_change)
-            if change > 0:
-                message = random.choice(increase_messages).format(nickname=sender_nickname, change=change)
-            elif change < 0:
-                positive_change = -change
-                message = random.choice(decrease_messages).format(nickname=sender_nickname, change=positive_change)
+            # 三十分钟后
+            # 30 分钟以后变长概率为 70%，无变化概率为 10%，变短概率为 20%
+            rand_num = random.random()
+            if rand_num < 0.7:
+                config = self.get_niuniu_config()
+                max_change = 5
+                change = random.randint(2, max_change)
+                message = random.choice(self.niuniu_texts['dajiao']['increase']).format(nickname=sender_nickname, change=change)
+            elif rand_num < 0.8:
+                change = 0
+                message = random.choice(self.niuniu_texts['dajiao']['no_effect']).format(nickname=sender_nickname)
             else:
-                message = random.choice(no_effect_messages).format(nickname=sender_nickname)
+                change = -random.randint(1, 2)
+                positive_change = -change
+                message = random.choice(self.niuniu_texts['dajiao']['decrease']).format(nickname=sender_nickname, change=positive_change)
 
             user_info["length"] += change
             if user_info["length"] < 1:
                 user_info["length"] = 1
+
+            # 三十分钟后打胶，硬度固定增加 2 点
+            user_info["hardness"] = min(user_info["hardness"] + 2, 10)
+
             self._save_niuniu_lengths()
             # 更新上次打胶时间
             self.last_dajiao_time[user_id] = current_time
             yield event.plain_result(self.format_niuniu_message(message, user_info["length"]))
         else:
-            yield event.plain_result(f"{sender_nickname}，你还没有注册牛牛，请先发送“注册牛牛”进行注册。")
+            message = self.niuniu_texts['dajiao']['not_registered'].format(nickname=sender_nickname)
+            yield event.plain_result(message)
 
     async def my_niuniu(self, event: AstrMessageEvent):
         """我的牛牛指令处理函数"""
@@ -245,25 +263,28 @@ class NiuniuPlugin(Star):
         if group_id and group_id in self.niuniu_lengths and user_id in self.niuniu_lengths[group_id]:
             user_info = self.niuniu_lengths[group_id][user_id]
             length = user_info["length"]
+            hardness = user_info["hardness"]
 
             # 根据长度给出评价
             if length <= 12:
-                evaluations = ["像一只蚕宝宝", "小趴菜", "还处于萌芽阶段呢"]
+                evaluations = self.niuniu_texts['my_niuniu']['evaluation']['short']
             elif length <= 24:
-                evaluations = ["表现还不错，继续加油", "中规中矩，有提升空间", "算是有点小实力啦"]
+                evaluations = self.niuniu_texts['my_niuniu']['evaluation']['medium']
             elif length <= 36:
-                evaluations = ["简直就是巨无霸", "太猛了，令人惊叹", "无敌的存在呀"]
+                evaluations = self.niuniu_texts['my_niuniu']['evaluation']['long']
             else:
-                evaluations = ["突破天际的超级巨物", "神话般的存在，无人能及", "已经超越常理的长度啦"]
+                evaluations = self.niuniu_texts['my_niuniu']['evaluation']['very_long']
 
             evaluation = random.choice(evaluations)
             if length >= 100:
                 length_str = f"{length / 100:.2f}m"
             else:
                 length_str = f"{length}cm"
-            yield event.plain_result(f"{sender_nickname}，你的牛牛长度为{length_str}，{evaluation}")
+            msg = self.niuniu_texts['my_niuniu']['info'].format(nickname=sender_nickname, length_str=length_str, hardness=hardness, evaluation=evaluation)
+            yield event.plain_result(msg)
         else:
-            yield event.plain_result(f"{sender_nickname}，你还没有注册牛牛，请先发送“注册牛牛”进行注册。")
+            msg = self.niuniu_texts['my_niuniu']['not_registered'].format(nickname=sender_nickname)
+            yield event.plain_result(msg)
 
     async def compare_niuniu(self, event: AstrMessageEvent, target_name: str = None):
         """比划比划指令处理函数"""
@@ -285,7 +306,12 @@ class NiuniuPlugin(Star):
                     if pattern.search(info["nickname"]):
                         matched_users.append(uid)
                 if len(matched_users) == 0:
-                    yield event.plain_result(f"{sender_nickname}，未找到包含 '{target_name}' 的已注册牛牛用户。")
+                    default_no_target_msg = "{nickname}，你没有指定要比划的对象哦！"
+                    no_target_msg = self.niuniu_texts['compare'].get('no_target', default_no_target_msg)
+                    if isinstance(no_target_msg, list):
+                        no_target_msg = random.choice(no_target_msg)
+                    message = no_target_msg.format(nickname=sender_nickname)
+                    yield event.plain_result(message)
                     return
                 elif len(matched_users) > 1:
                     yield event.plain_result(f"{sender_nickname}，找到多个包含 '{target_name}' 的用户，请使用 @ 精确指定对手。")
@@ -298,15 +324,30 @@ class NiuniuPlugin(Star):
                         yield event.plain_result(f"{sender_nickname}，你不能和自己比划。")
                         return
             else:
-                yield event.plain_result(f"{sender_nickname}，请 @ 一名已注册牛牛的用户或输入用户名关键词进行比划。")
+                default_no_target_msg = "{nickname}，你没有指定要比划的对象哦！"
+                no_target_msg = self.niuniu_texts['compare'].get('no_target', default_no_target_msg)
+                if isinstance(no_target_msg, list):
+                    no_target_msg = random.choice(no_target_msg)
+                message = no_target_msg.format(nickname=sender_nickname)
+                yield event.plain_result(message)
                 return
 
             if not target_user_id:
-                yield event.plain_result(f"{sender_nickname}，请 @ 一名已注册牛牛的用户或输入用户名关键词进行比划。")
+                default_no_target_msg = "{nickname}，你没有指定要比划的对象哦！"
+                no_target_msg = self.niuniu_texts['compare'].get('no_target', default_no_target_msg)
+                if isinstance(no_target_msg, list):
+                    no_target_msg = random.choice(no_target_msg)
+                message = no_target_msg.format(nickname=sender_nickname)
+                yield event.plain_result(message)
                 return
 
             if target_user_id not in self.niuniu_lengths[group_id]:
-                yield event.plain_result(f"{sender_nickname}，对方还没有注册牛牛呢！")
+                default_msg = "{nickname}，对方还没有注册牛牛呢！"
+                target_not_registered_msg = self.niuniu_texts['compare'].get('target_not_registered', default_msg)
+                if isinstance(target_not_registered_msg, list):
+                    target_not_registered_msg = random.choice(target_not_registered_msg)
+                message = target_not_registered_msg.format(nickname=sender_nickname)
+                yield event.plain_result(message)
                 return
 
             # 检查 10 分钟内邀请人数限制
@@ -315,13 +356,12 @@ class NiuniuPlugin(Star):
             last_time, count = group_invite_count.get(user_id, (0, 0))
             if current_time - last_time < 10 * 60:
                 if count >= 3:
-                    limit_messages = [
-                        f"{sender_nickname}，你的牛牛刚比划了好几回，这会儿累得直喘气，得缓缓啦！",
-                        f"{sender_nickname}，牛牛经过几次比划，已经累得软绵绵的，让它歇会儿吧！",
-                        f"{sender_nickname}，你的牛牛连续比划，现在都有点颤颤巍巍了，快让它休息下！",
-                        f"{sender_nickname}，牛牛比划了这么多次，已经疲惫不堪，没力气再比啦，先休息会儿！"
-                    ]
-                    yield event.plain_result(random.choice(limit_messages))
+                    default_limit_msg = "{nickname}，你在 10 分钟内邀请人数过多，暂时不能再发起比划啦！"
+                    limit_msg = self.niuniu_texts['compare'].get('limit', default_limit_msg)
+                    if isinstance(limit_msg, list):
+                        limit_msg = random.choice(limit_msg)
+                    message = limit_msg.format(nickname=sender_nickname)
+                    yield event.plain_result(message)
                     return
             else:
                 count = 0
@@ -333,7 +373,12 @@ class NiuniuPlugin(Star):
             last_compare = user_compare_time.get(target_user_id, 0)
             MIN_COMPARE_COOLDOWN = 10 * 60  # 10 分钟冷却时间
             if current_time - last_compare < MIN_COMPARE_COOLDOWN:
-                yield event.plain_result(f"{sender_nickname}，你在 10 分钟内已邀请过该用户比划，稍等一下吧。")
+                default_cooldown_msg = "{nickname}，你和该对手的比划冷却时间还没到呢，请稍后再试。"
+                cooldown_msg = self.niuniu_texts['compare'].get('cooldown', default_cooldown_msg)
+                if isinstance(cooldown_msg, list):
+                    cooldown_msg = random.choice(cooldown_msg)
+                message = cooldown_msg.format(nickname=sender_nickname)
+                yield event.plain_result(message)
                 return
 
             user_info = self.niuniu_lengths[group_id][user_id]
@@ -343,87 +388,127 @@ class NiuniuPlugin(Star):
 
             user_length = user_info["length"]
             target_length = target_info["length"]
+            user_hardness = user_info["hardness"]
+            target_hardness = target_info["hardness"]
             diff = user_length - target_length
 
-            # 增加随机事件：两败俱伤，长度减半
-            double_loss_probability = 0.05  # 5% 的概率两败俱伤
-            if self.check_probability(double_loss_probability):
-                user_info["length"] = max(1, user_length // 2)
-                target_info["length"] = max(1, target_length // 2)
-                self._save_niuniu_lengths()
-                yield event.plain_result(f"{sender_nickname} 和 {target_info['nickname']}，你们俩的牛牛刚一碰撞，就像两颗脆弱的玻璃珠，“啪嗒”一下都折断啦！双方的牛牛长度都减半咯！")
-                return
-
-            hardness_win_messages = [
-                "{nickname}，虽然你们的牛牛长度相近，但你的牛牛如同钢铁般坚硬，一下子就碾压了对方，太厉害了！",
-                "{nickname}，关键时刻，你的牛牛硬度爆棚，像一把利刃刺穿了对方的防线，成功战胜对手！",
-                "{nickname}，长度差不多又怎样，你的牛牛凭借着惊人的硬度脱颖而出，霸气侧漏！"
-            ]
-
-            if abs(diff) <= 10:
-                if self.check_probability(0.3):
-                    config = self.get_niuniu_config()
-                    min_bonus = config.get('min_bonus', 0)
-                    max_bonus = config.get('max_bonus', 3)
-                    bonus = random.randint(min_bonus, max_bonus)
-                    user_info["length"] += bonus
-                    self._save_niuniu_lengths()
-                    message = random.choice(hardness_win_messages).format(nickname=sender_nickname)
-                    yield event.plain_result(self.format_niuniu_message(f"{message} 你的长度增加{bonus}cm",
-                                                                        user_info["length"]))
-                    return
-                else:
-                    yield event.plain_result(f"{sender_nickname} 和 {target_info['nickname']}，你们的牛牛长度差距不大，就像两位旗鼓相当的对手，继续加油哦！")
-            elif diff > 0:
-                config = self.get_niuniu_config()
-                min_bonus = config.get('min_bonus', 0)
-                max_bonus = config.get('max_bonus', 3)
-                bonus = random.randint(min_bonus, max_bonus)
-                user_info["length"] += bonus
-                self._save_niuniu_lengths()
-                win_messages = [
-                    "{nickname}，你的牛牛就像一条威风凛凛的巨龙，以绝对的长度优势把 {target_nickname} 的牛牛打得节节败退，太威武啦！",
-                    "{nickname}，你的牛牛如同一个勇猛的战士，用长长的身躯轻松碾压了 {target_nickname} 的牛牛，厉害极了！",
-                    "{nickname}，你家牛牛简直就是王者降临，长度上把 {target_nickname} 远远甩在身后，让对方毫无还手之力！"
-                ]
-                message = random.choice(win_messages).format(nickname=sender_nickname, target_nickname=target_info["nickname"])
-                yield event.plain_result(self.format_niuniu_message(
-                    f"{message} 你的长度增加{bonus}cm",
-                    user_info["length"]))
+            # 确定长短牛牛
+            if user_length < target_length:
+                short_info = user_info
+                short_nickname = sender_nickname
+                long_info = target_info
+                long_nickname = target_info["nickname"]
             else:
-                config = self.get_niuniu_config()
-                min_bonus = config.get('min_bonus', 0)
-                max_bonus = config.get('max_bonus', 3)
+                short_info = target_info
+                short_nickname = target_info["nickname"]
+                long_info = user_info
+                long_nickname = sender_nickname
+
+            length_diff = long_info["length"] - short_info["length"]
+
+            # 计算胜率
+            if length_diff <= 10:
+                base_win_chance = 0.5  # 长度相近基础胜率 50%
+            else:
+                base_win_chance = 0.3  # 短牛牛基础胜率 30%
+
+            # 长度对短牛牛胜率的影响
+            length_influence = 0
+            if length_diff > 10:
+                length_influence = -min(max(length_diff * 0.01, 0.01), 0.2)  # 长度差距大，短牛牛胜率降低，最大降低 20%
+
+            # 硬度对胜率的影响
+            hardness_diff = short_info["hardness"] - long_info["hardness"]
+            hardness_influence = min(max(hardness_diff * 0.01, -0.2), 0.2)  # 硬度影响范围 -20% 到 20%
+
+            win_chance = base_win_chance + length_influence + hardness_influence
+            win_chance = max(win_chance, 0.1)  # 最低胜率 10%
+
+            config = self.get_niuniu_config()
+            min_bonus = config.get('min_bonus', 0)
+            max_bonus = config.get('max_bonus', 3)
+
+            if self.check_probability(win_chance):
                 bonus = random.randint(min_bonus, max_bonus)
-                target_info["length"] += bonus
+                extra_length = 0
+                if length_diff > 10 and short_info == user_info:
+                    # 长度差距大于 10 且短牛牛获胜，额外获得长牛牛 20% 长度
+                    extra_length = int(long_info["length"] * 0.2)
+                    short_info["length"] += bonus + extra_length
+                    long_info["length"] -= extra_length
+                    default_short_win_msg = "{short_nickname} 以小博大，战胜了 {long_nickname}！长度增加了 {bonus}cm，还额外获得了 {extra_length}cm！"
+                    short_win_msg = self.niuniu_texts['compare'].get('short_win', default_short_win_msg)
+                    if isinstance(short_win_msg, list):
+                        short_win_msg = random.choice(short_win_msg)
+                    message = short_win_msg.format(
+                        short_nickname=short_nickname, long_nickname=long_nickname, bonus=bonus, extra_length=extra_length)
+                else:
+                    default_win_msg = "{nickname} 在和 {target_nickname} 的比划中获胜啦！"
+                    win_msg = self.niuniu_texts['compare'].get('win', default_win_msg)
+                    if isinstance(win_msg, list):
+                        win_msg = random.choice(win_msg)
+                    message = win_msg.format(
+                        nickname=short_nickname, target_nickname=long_nickname)
+
                 self._save_niuniu_lengths()
-                lose_messages = [
-                    "{nickname}，很可惜呀，这次你的牛牛就像一只小虾米，在长度上完全比不过 {target_nickname} 的大鲸鱼，下次加油呀！",
-                    "{nickname}，{target_nickname} 的牛牛如同一个巨人，在长度上把你的牛牛秒成了渣渣，你别气馁，还有机会！",
-                    "{nickname}，这一回你的牛牛就像一颗小豆芽，长度远远不及 {target_nickname} 的参天大树，再接再厉，争取下次赢回来！"
-                ]
-                message = random.choice(lose_messages).format(nickname=sender_nickname, target_nickname=target_info["nickname"])
+                yield event.plain_result(self.format_niuniu_message(
+                    f"{message} 你的长度增加{bonus}cm" + (f"，还额外获得了 {extra_length}cm！" if extra_length > 0 else ""),
+                    short_info["length"]))
+            else:
+                bonus = random.randint(min_bonus, max_bonus)
+                long_info["length"] += bonus
+                self._save_niuniu_lengths()
+                default_lose_msg = "{nickname} 在和 {target_nickname} 的比划中落败了。"
+                lose_msg = self.niuniu_texts['compare'].get('lose', default_lose_msg)
+                if isinstance(lose_msg, list):
+                    lose_msg = random.choice(lose_msg)
+                lose_message = lose_msg.format(
+                    nickname=short_nickname, target_nickname=long_nickname)
                 if bonus > 0:
-                    target_new_length = target_info["length"]
+                    target_new_length = long_info["length"]
                     if target_new_length >= 100:
                         length_str = f"{target_new_length / 100:.2f}m"
                     else:
                         length_str = f"{target_new_length}cm"
-                    yield event.plain_result(f"{message} {target_info['nickname']} 的长度增加{bonus}cm，当前长度为{length_str}")
+                    default_target_increase_msg = "{message} {target_nickname} 的牛牛长度增加了 {bonus}cm，现在长度为 {length_str}。"
+                    target_increase_msg = self.niuniu_texts['compare'].get('target_increase', default_target_increase_msg)
+                    if isinstance(target_increase_msg, list):
+                        target_increase_msg = random.choice(target_increase_msg)
+                    message = target_increase_msg.format(
+                        message=lose_message, target_nickname=long_nickname, bonus=bonus, length_str=length_str)
+                    yield event.plain_result(message)
                 else:
-                    yield event.plain_result(f"{message} 不过 {target_info['nickname']} 的长度没有增加。")
+                    default_target_no_increase_msg = "{message} {target_nickname} 的牛牛长度没有变化。"
+                    target_no_increase_msg = self.niuniu_texts['compare'].get('target_no_increase', default_target_no_increase_msg)
+                    if isinstance(target_no_increase_msg, list):
+                        target_no_increase_msg = random.choice(target_no_increase_msg)
+                    message = target_no_increase_msg.format(
+                        message=lose_message, target_nickname=long_nickname)
+                    yield event.plain_result(message)
+
+            # 比划比划时，硬度 30% 概率降低 1 点
+            for info in [user_info, target_info]:
+                if self.check_probability(0.3):
+                    info["hardness"] = max(1, info["hardness"] - 1)
+            self._save_niuniu_lengths()
         else:
-            yield event.plain_result(f"{sender_nickname}，你还没有注册牛牛，请先发送“注册牛牛”进行注册。")
+            default_self_not_registered_msg = "{nickname}，你还没有注册牛牛，无法进行比划哦！"
+            self_not_registered_msg = self.niuniu_texts['compare'].get('not_registered', default_self_not_registered_msg)
+            if isinstance(self_not_registered_msg, list):
+                self_not_registered_msg = random.choice(self_not_registered_msg)
+            message = self_not_registered_msg.format(nickname=sender_nickname)
+            yield event.plain_result(message)
 
     async def niuniu_rank(self, event: AstrMessageEvent):
         """牛牛排行指令处理函数"""
-        group_id = event.message_obj.group_id
-        if group_id and group_id in self.niuniu_lengths:
-            sorted_niuniu = sorted(self.niuniu_lengths[group_id].items(), key=lambda x: x[1]["length"], reverse=True)
-            rank_message = "牛牛排行榜：\n"
-            for i, (_, user_info) in enumerate(sorted_niuniu, start=1):
-                nickname = user_info["nickname"]
-                length = user_info["length"]
+        group_id = str(event.message_obj.group_id)
+        if group_id in self.niuniu_lengths:
+            users = self.niuniu_lengths[group_id]
+            sorted_users = sorted(users.items(), key=lambda item: item[1]["length"], reverse=True)
+            rank_message = "本群牛牛长度排行榜：\n"
+            for i, (user_id, info) in enumerate(sorted_users, start=1):
+                nickname = info["nickname"]
+                length = info["length"]
                 if length >= 100:
                     length_str = f"{length / 100:.2f}m"
                 else:
@@ -431,16 +516,11 @@ class NiuniuPlugin(Star):
                 rank_message += f"{i}. {nickname}：{length_str}\n"
             yield event.plain_result(rank_message)
         else:
-            yield event.plain_result("当前群里还没有人注册牛牛呢！")
+            message = "本群还没有人注册牛牛呢。"
+            yield event.plain_result(message)
 
     async def niuniu_menu(self, event: AstrMessageEvent):
         """牛牛菜单指令处理函数"""
-        menu = """
-牛牛游戏菜单：
-1. 注册牛牛：开启你的牛牛之旅，随机获得初始长度的牛牛。
-2. 打胶：通过此操作有机会让你的牛牛长度增加或减少，注意要等牛牛恢复好哦。
-3. 我的牛牛：查看你当前牛牛的长度，并获得相应评价。
-4. 比划比划：@ 一名已注册牛牛的用户，或输入用户名关键词，进行牛牛长度的较量。
-5. 牛牛排行：查看当前群内牛牛长度的排行榜。
-        """
+        default_menu = "牛牛插件菜单：\n1. 注册牛牛：注册你的牛牛\n2. 打胶：尝试增加牛牛长度\n3. 我的牛牛：查看自己牛牛的长度和硬度\n4. 比划比划 [对手名称/@对手]：和其他用户比划牛牛长度\n5. 牛牛排行：查看本群牛牛长度排行榜\n6. 牛牛开：开启牛牛插件\n7. 牛牛关：关闭牛牛插件"
+        menu = self.niuniu_texts.get('menu', default_menu)
         yield event.plain_result(menu)
