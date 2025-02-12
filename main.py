@@ -10,6 +10,7 @@ PLUGIN_DIR = os.path.join('data', 'plugins', 'astrbot_plugin_niuniu')
 os.makedirs(PLUGIN_DIR, exist_ok=True)
 NIUNIU_LENGTHS_FILE = os.path.join('data', 'niuniu_lengths.yml')
 NIUNIU_TEXTS_FILE = os.path.join(PLUGIN_DIR, 'niuniu_game_texts.yml')
+LAST_ACTION_FILE = os.path.join(PLUGIN_DIR, 'last_actions.yml')
 
 @register("niuniu_plugin", "长安某", "牛牛插件，包含注册牛牛、打胶、我的牛牛、比划比划、牛牛排行等功能", "3.1.1")
 class NiuniuPlugin(Star):
@@ -25,8 +26,8 @@ class NiuniuPlugin(Star):
         self.niuniu_lengths = self._load_niuniu_lengths()
         self.niuniu_texts = self._load_niuniu_texts()
         self.last_dajiao_time = {}      # {str(group_id): {str(user_id): last_time}}
-        self.invite_count = {}          # {str(group_id): {str(user_id): (last_time, count)}}
         self.last_compare_time = {}     # {str(group_id): {str(user_id): {str(target_id): last_time}}}
+        self.last_actions = self._load_last_actions()
 
     # region 数据管理
     def _create_niuniu_lengths_file(self):
@@ -64,7 +65,6 @@ class NiuniuPlugin(Star):
             'register': {
                 'success': "🧧 {nickname} 成功注册牛牛！\n📏 初始长度：{length}cm\n💪 硬度等级：{hardness}",
                 'already_registered': "⚠️ {nickname} 你已经注册过牛牛啦！",
-                'only_group': "❌ 请在群聊中注册牛牛"
             },
             'dajiao': {
                 'cooldown': [
@@ -99,7 +99,6 @@ class NiuniuPlugin(Star):
                 'no_target': "❌ {nickname} 请指定比划对象",
                 'target_not_registered': "❌ 对方尚未注册牛牛",
                 'cooldown': "⏳ {nickname} 请等待{remaining}分钟后再比划",
-                'limit': "🛑 {nickname} 今日比划次数已达上限",
                 'self_compare': "❌ 不能和自己比划",
                 'win': [
                     "🎉 {winner} 战胜了 {loser}！\n📈 增加 {gain}cm",
@@ -156,6 +155,22 @@ class NiuniuPlugin(Star):
                 yaml.dump(self.niuniu_lengths, f, allow_unicode=True)
         except Exception as e:
             self.context.logger.error(f"保存失败: {str(e)}")
+
+    def _load_last_actions(self):
+        """加载冷却数据"""
+        try:
+            with open(LAST_ACTION_FILE, 'r', encoding='utf-8') as f:
+                return yaml.safe_load(f) or {}
+        except:
+            return {}
+
+    def _save_last_actions(self):
+        """保存冷却数据"""
+        try:
+            with open(LAST_ACTION_FILE, 'w', encoding='utf-8') as f:
+                yaml.dump(self.last_actions, f, allow_unicode=True)
+        except Exception as e:
+            self.context.logger.error(f"保存冷却数据失败: {str(e)}")
     # endregion
 
     # region 工具方法
@@ -204,30 +219,31 @@ class NiuniuPlugin(Star):
                 group_id = str(event.message_obj.group_id)
                 group_data = self.get_group_data(group_id)
                 for user_id, user_data in group_data.items():
-                    if re.search(target_name, user_data.get('nickname', ''), re.IGNORECASE):
+                    nickname = user_data.get('nickname', '')
+                    if re.search(re.escape(target_name), nickname, re.IGNORECASE):
                         return user_id
         return None
     # endregion
 
     # region 事件处理
-    @event_message_type(EventMessageType.ALL)
-    async def on_all_messages(self, event: AstrMessageEvent):
-        """消息处理器"""
-        if not hasattr(event.message_obj, "group_id"):
-            return
+    niuniu_commands = ["牛牛菜单", "牛牛开", "牛牛关", "注册牛牛", "打胶", "我的牛牛", "比划比划", "牛牛排行"]
 
+    @event_message_type(EventMessageType.GROUP_MESSAGE)
+    async def on_group_message(self, event: AstrMessageEvent):
+        """群聊消息处理器"""
         group_id = str(event.message_obj.group_id)
         msg = event.message_str.strip()
+
         handler_map = {
-    "牛牛菜单": self._show_menu,
-    "牛牛开": lambda event: self._toggle_plugin(event, True),
-    "牛牛关": lambda event: self._toggle_plugin(event, False),
-    "注册牛牛": self._register,
-    "打胶": self._dajiao,
-    "我的牛牛": self._show_status,
-    "比划比划": self._compare,
-    "牛牛排行": self._show_ranking
-}
+            "牛牛菜单": self._show_menu,
+            "牛牛开": lambda event: self._toggle_plugin(event, True),
+            "牛牛关": lambda event: self._toggle_plugin(event, False),
+            "注册牛牛": self._register,
+            "打胶": self._dajiao,
+            "我的牛牛": self._show_status,
+            "比划比划": self._compare,
+            "牛牛排行": self._show_ranking
+        }
 
         for cmd, handler in handler_map.items():
             if msg.startswith(cmd):
@@ -235,8 +251,19 @@ class NiuniuPlugin(Star):
                     yield result
                 return
 
-        yield event
+    @event_message_type(EventMessageType.PRIVATE_MESSAGE)
+    async def on_private_message(self, event: AstrMessageEvent):
+        """私聊消息处理器"""
+        msg = event.message_str.strip()
+        niuniu_commands = ["牛牛菜单", "牛牛开", "牛牛关", "注册牛牛", "打胶", "我的牛牛", "比划比划", "牛牛排行"]
+        
+        if any(msg.startswith(cmd) for cmd in niuniu_commands):
+            yield event.plain_result("不许一个人偷偷玩牛牛")
+        else:
+            return
+    # endregion
 
+    # region 核心功能
     async def _toggle_plugin(self, event, enable):
         """开关插件"""
         group_id = str(event.message_obj.group_id)
@@ -244,9 +271,7 @@ class NiuniuPlugin(Star):
         self._save_niuniu_lengths()
         text_key = 'enable' if enable else 'disable'
         yield event.plain_result(self.niuniu_texts['system'][text_key])
-    # endregion
 
-    # region 核心功能
     async def _register(self, event):
         """注册牛牛"""
         group_id = str(event.message_obj.group_id)
@@ -287,7 +312,7 @@ class NiuniuPlugin(Star):
             return
 
         # 冷却检查
-        last_time = self.last_dajiao_time.setdefault(group_id, {}).get(user_id, 0)
+        last_time = self.last_actions.setdefault(group_id, {}).get(user_id, {}).get('dajiao', 0)
         on_cooldown, remaining = self.check_cooldown(last_time, self.COOLDOWN_10_MIN)
         if on_cooldown:
             mins = int(remaining // 60) + 1
@@ -319,7 +344,8 @@ class NiuniuPlugin(Star):
 
         # 应用变化
         user_data['length'] = max(1, user_data['length'] + change)
-        self.last_dajiao_time[group_id][user_id] = current_time
+        self.last_actions.setdefault(group_id, {}).setdefault(user_id, {})['dajiao'] = current_time
+        self._save_last_actions()
         self._save_niuniu_lengths()
 
         # 生成消息
@@ -391,6 +417,10 @@ class NiuniuPlugin(Star):
         hardness_factor = (user_data['hardness'] - target_data['hardness']) * 0.05
         win_prob = min(max(base_win + hardness_factor, 0.1), 0.9)
 
+        # 记录比划前的长度
+        old_u_len = user_data['length']
+        old_t_len = target_data['length']
+
         # 执行判定
         if random.random() < win_prob:
             gain = random.randint(1, 3)
@@ -423,9 +453,9 @@ class NiuniuPlugin(Star):
         
         # 生成结果消息
         result_msg = [
-            f"⚔️ 【牛牛对决结果】 ⚔️",
-            f"🗡️ {nickname}: {self.format_length(user_data['length'] - gain)} > {self.format_length(user_data['length'])}",
-            f"🛡️ {target_data['nickname']}: {self.format_length(target_data['length'] + loss)} > {self.format_length(target_data['length'])}",
+            "⚔️ 【牛牛对决结果】 ⚔️",
+            f"🗡️ {nickname}: {self.format_length(old_u_len)} > {self.format_length(user_data['length'])}",
+            f"🛡️ {target_data['nickname']}: {self.format_length(old_t_len)} > {self.format_length(target_data['length'])}",
             f"📢 {text}"
         ]
         
@@ -505,3 +535,4 @@ class NiuniuPlugin(Star):
     async def _show_menu(self, event):
         """显示菜单"""
         yield event.plain_result(self.niuniu_texts['menu']['default'])
+    # endregion
