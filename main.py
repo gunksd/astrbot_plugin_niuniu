@@ -12,7 +12,7 @@ NIUNIU_LENGTHS_FILE = os.path.join('data', 'niuniu_lengths.yml')
 NIUNIU_TEXTS_FILE = os.path.join(PLUGIN_DIR, 'niuniu_game_texts.yml')
 LAST_ACTION_FILE = os.path.join(PLUGIN_DIR, 'last_actions.yml')
 
-@register("niuniu_plugin", "长安某", "牛牛插件，包含注册牛牛、打胶、我的牛牛、比划比划、牛牛排行等功能", "3.1.1")
+@register("niuniu_plugin", "长安某", "牛牛插件，包含注册牛牛、打胶、我的牛牛、比划比划、牛牛排行等功能", "3.1.0")
 class NiuniuPlugin(Star):
     # 冷却时间常量（秒）
     COOLDOWN_10_MIN = 600    # 10分钟
@@ -91,7 +91,9 @@ class NiuniuPlugin(Star):
                     'short': ["小巧玲珑", "精致可爱"],
                     'medium': ["中规中矩", "潜力无限"],
                     'long': ["威风凛凛", "傲视群雄"],
-                    'very_long': ["擎天巨柱", "突破天际"]
+                    'very_long': ["擎天巨柱", "突破天际"],
+                    'super_long': ["超级长", "无与伦比"],
+                    'ultra_long': ["超越极限", "无人能敌"]
                 },
                 'not_registered': "❌ {nickname} 请先注册牛牛"
             },
@@ -108,7 +110,10 @@ class NiuniuPlugin(Star):
                     "😭 {loser} 败给 {winner}\n📉 减少 {loss}cm",
                     "💔 {loser} 的牛牛不敌对方！-{loss}cm"
                 ],
-                'draw': "🤝 双方势均力敌！"
+                'draw': "🤝 双方势均力敌！",
+                'double_loss': "😱 {nickname1} 和 {nickname2} 的牛牛因过于柔软发生缠绕，长度减半！",
+                'hardness_win': "🎉 {nickname} 因硬度优势获胜！",
+                'hardness_lose': "💔 {nickname} 因硬度劣势败北！"
             },
             'ranking': {
                 'header': "🏅 牛牛排行榜 TOP10：\n",
@@ -427,21 +432,49 @@ class NiuniuPlugin(Star):
             loss = random.randint(1, 2)
             user_data['length'] += gain
             target_data['length'] = max(1, target_data['length'] - loss)
-            text = random.choice(self.niuniu_texts['compare']['win']).format(
-                nickname=nickname,
-                target_nickname=target_data['nickname'],
-                gain=gain
-            )
+            if abs(u_len - t_len) >= 20 and user_data['hardness'] < target_data['hardness']:
+                text = random.choice(self.niuniu_texts['compare']['big_disadvantage_win']).format(
+                    nickname=nickname,
+                    target_nickname=target_data['nickname']
+                )
+                # 给予额外奖励
+                extra_gain = random(1,5)  # 具体的奖励值
+                user_data['length'] += extra_gain
+                text += f"\n🎁 由于极大劣势获胜，额外增加 {extra_gain}cm！"
+            elif abs(u_len - t_len) <= 5 and user_data['hardness'] > target_data['hardness']:
+                text = random.choice(self.niuniu_texts['compare']['hardness_win']).format(
+                    nickname=nickname
+                )
+            else:
+                text = random.choice(self.niuniu_texts['compare']['win']).format(
+                    nickname=nickname,
+                    target_nickname=target_data['nickname'],
+                    gain=gain
+                )
         else:
             gain = random.randint(1, 3)
             loss = random.randint(1, 2)
             target_data['length'] += gain
             user_data['length'] = max(1, user_data['length'] - loss)
-            text = random.choice(self.niuniu_texts['compare']['lose']).format(
-                nickname=nickname,
-                target_nickname=target_data['nickname'],
-                loss=loss
-            )
+            if abs(u_len - t_len) >= 20 and user_data['hardness'] > target_data['hardness']:
+                text = random.choice(self.niuniu_texts['compare']['big_advantage_lose']).format(
+                    nickname=nickname,
+                    target_nickname=target_data['nickname']
+                )
+                # 给予额外惩罚
+                extra_loss = random(2,6)  # 具体的惩罚值
+                user_data['length'] = max(1, user_data['length'] - extra_loss)
+                text += f"\n💔 由于极大优势失败，额外减少 {extra_loss}cm！"
+            elif abs(u_len - t_len) <= 5 and user_data['hardness'] < target_data['hardness']:
+                text = random.choice(self.niuniu_texts['compare']['hardness_lose']).format(
+                    nickname=nickname
+                )
+            else:
+                text = random.choice(self.niuniu_texts['compare']['lose']).format(
+                    nickname=nickname,
+                    target_nickname=target_data['nickname'],
+                    loss=loss
+                )
         
         # 硬度衰减
         if random.random() < 0.3:
@@ -462,12 +495,17 @@ class NiuniuPlugin(Star):
         # 添加特殊事件
         if abs(u_len - t_len) <= 5:
             result_msg.append("💥 双方势均力敌！")
-        elif (user_data['hardness'] <= 2 and target_data['hardness'] <= 2) and random.random() < 0.2:
+        if (user_data['hardness'] <= 2 or target_data['hardness'] <= 2) and random.random() < 0.2:
             result_msg.append("💢 双方牛牛因过于柔软发生缠绕，长度减半！")
             user_data['length'] = max(1, user_data['length'] // 2)
             target_data['length'] = max(1, target_data['length'] // 2)
             self._save_niuniu_lengths()
-        
+        if diff < 10 and random.random() < 0.1:  # 添加长度差距小于10的特殊触发方式
+            result_msg.append(self.niuniu_texts['compare']['double_loss'].format(nickname1=nickname, nickname2=target_data['nickname']))
+            user_data['length'] = max(1, user_data['length'] // 2)
+            target_data['length'] = max(1, target_data['length'] // 2)
+            self._save_niuniu_lengths()
+
         yield event.plain_result("\n".join(result_msg))
 
     async def _show_status(self, event):
@@ -484,14 +522,18 @@ class NiuniuPlugin(Star):
         # 评价系统
         length = user_data['length']
         length_str = self.format_length(length)
-        if length < 10:
+        if length < 12:
             evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['short'])
-        elif length < 20:
+        elif length < 25:
             evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['medium'])
         elif length < 50:
             evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['long'])
-        else:
+        elif length < 100:
             evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['very_long'])
+        elif length < 200:
+            evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['super_long'])
+        else:
+            evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['ultra_long'])
 
         text = self.niuniu_texts['my_niuniu']['info'].format(
             nickname=nickname,
