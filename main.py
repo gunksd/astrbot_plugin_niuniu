@@ -12,7 +12,7 @@ NIUNIU_LENGTHS_FILE = os.path.join('data', 'niuniu_lengths.yml')
 NIUNIU_TEXTS_FILE = os.path.join(PLUGIN_DIR, 'niuniu_game_texts.yml')
 LAST_ACTION_FILE = os.path.join(PLUGIN_DIR, 'last_actions.yml')
 
-@register("niuniu_plugin", "长安某", "牛牛插件，包含注册牛牛、打胶、我的牛牛、比划比划、牛牛排行等功能", "3.2.0")
+@register("niuniu_plugin", "长安某", "牛牛插件，包含注册牛牛、打胶、我的牛牛、比划比划、牛牛排行等功能", "3.1.0")
 class NiuniuPlugin(Star):
     # 冷却时间常量（秒）
     COOLDOWN_10_MIN = 600    # 10分钟
@@ -113,7 +113,8 @@ class NiuniuPlugin(Star):
                 'draw': "🤝 双方势均力敌！",
                 'double_loss': "😱 {nickname1} 和 {nickname2} 的牛牛因过于柔软发生缠绕，长度减半！",
                 'hardness_win': "🎉 {nickname} 因硬度优势获胜！",
-                'hardness_lose': "💔 {nickname} 因硬度劣势败北！"
+                'hardness_lose': "💔 {nickname} 因硬度劣势败北！",
+                'user_no_increase': "😅 {nickname} 的牛牛没有任何增长。"
             },
             'ranking': {
                 'header': "🏅 牛牛排行榜 TOP10：\n",
@@ -224,9 +225,10 @@ class NiuniuPlugin(Star):
                 group_id = str(event.message_obj.group_id)
                 group_data = self.get_group_data(group_id)
                 for user_id, user_data in group_data.items():
-                    nickname = user_data.get('nickname', '')
-                    if re.search(re.escape(target_name), nickname, re.IGNORECASE):
-                        return user_id
+                    if isinstance(user_data, dict):  # 检查 user_data 是否为字典
+                        nickname = user_data.get('nickname', '')
+                        if re.search(re.escape(target_name), nickname, re.IGNORECASE):
+                            return user_id
         return None
     # endregion
 
@@ -292,7 +294,7 @@ class NiuniuPlugin(Star):
         cfg = self.config.get('niuniu_config', {})
         group_data[user_id] = {
             'nickname': nickname,
-            'length': random.randint(cfg.get('min_length', 5), cfg.get('max_length', 15)),
+            'length': random.randint(cfg.get('min_length', 3), cfg.get('max_length', 10)),
             'hardness': 1
         }
         self._save_niuniu_lengths()
@@ -411,16 +413,20 @@ class NiuniuPlugin(Star):
         # 计算胜负
         u_len = user_data['length']
         t_len = target_data['length']
-        diff = abs(u_len - t_len)
-        
+        u_hardness = user_data['hardness']
+        t_hardness = target_data['hardness']
+
         # 基础胜率
         base_win = 0.5
-        if diff > 0:
-            base_win = 0.7 if u_len > t_len else 0.3
-        
-        # 硬度影响
-        hardness_factor = (user_data['hardness'] - target_data['hardness']) * 0.05
-        win_prob = min(max(base_win + hardness_factor, 0.1), 0.9)
+
+        # 长度影响（最多影响20%的胜率）
+        length_factor = (u_len - t_len) / max(u_len, t_len) * 0.2
+
+        # 硬度影响（最多影响10%的胜率）
+        hardness_factor = (u_hardness - t_hardness) * 0.05
+
+        # 最终胜率（限制在20%-80%之间）
+        win_prob = min(max(base_win + length_factor + hardness_factor, 0.2), 0.8)
 
         # 记录比划前的长度
         old_u_len = user_data['length']
@@ -428,62 +434,56 @@ class NiuniuPlugin(Star):
 
         # 执行判定
         if random.random() < win_prob:
-            gain = random.randint(1, 3)
+            gain = random.randint(0, 3)
             loss = random.randint(1, 2)
             user_data['length'] += gain
             target_data['length'] = max(1, target_data['length'] - loss)
+            text = random.choice(self.niuniu_texts['compare']['win']).format(
+                nickname=nickname,
+                target_nickname=target_data['nickname'],
+                gain=gain
+            )
+            total_gain = gain
             if abs(u_len - t_len) >= 20 and user_data['hardness'] < target_data['hardness']:
-                text = random.choice(self.niuniu_texts['compare']['big_disadvantage_win']).format(
-                    nickname=nickname,
-                    target_nickname=target_data['nickname']
-                )
-                # 给予额外奖励
-                extra_gain = random(1,5)  # 具体的奖励值
+                extra_gain = random.randint(0, 5)  # 额外的奖励值
                 user_data['length'] += extra_gain
+                total_gain += extra_gain
                 text += f"\n🎁 由于极大劣势获胜，额外增加 {extra_gain}cm！"
-            elif abs(u_len - t_len) <= 5 and user_data['hardness'] > target_data['hardness']:
-                text = random.choice(self.niuniu_texts['compare']['hardness_win']).format(
-                    nickname=nickname
-                )
-            else:
-                text = random.choice(self.niuniu_texts['compare']['win']).format(
-                    nickname=nickname,
-                    target_nickname=target_data['nickname'],
-                    gain=gain
-                )
+            if abs(u_len - t_len) > 10 and u_len < t_len:
+                stolen_length = int(target_data['length'] * 0.2)
+                user_data['length'] += stolen_length
+                total_gain += stolen_length
+                target_data['length'] = max(1, target_data['length'] - stolen_length)
+                text += f"\n🎉 {nickname} 战胜了 {target_data['nickname']}，掠夺了 {stolen_length}cm 的长度！"
+            if abs(u_len - t_len) <= 5 and user_data['hardness'] > target_data['hardness']:
+                text += f"\n🎉 {nickname} 因硬度优势获胜！"
+            if total_gain == 0:
+                text += f"\n{self.niuniu_texts['compare']['user_no_increase'].format(nickname=nickname)}"
         else:
-            gain = random.randint(1, 3)
+            gain = random.randint(0, 3)
             loss = random.randint(1, 2)
             target_data['length'] += gain
             user_data['length'] = max(1, user_data['length'] - loss)
+            text = random.choice(self.niuniu_texts['compare']['lose']).format(
+                nickname=nickname,
+                target_nickname=target_data['nickname'],
+                loss=loss
+            )
             if abs(u_len - t_len) >= 20 and user_data['hardness'] > target_data['hardness']:
-                text = random.choice(self.niuniu_texts['compare']['big_advantage_lose']).format(
-                    nickname=nickname,
-                    target_nickname=target_data['nickname']
-                )
-                # 给予额外惩罚
-                extra_loss = random(2,6)  # 具体的惩罚值
+                extra_loss = random.randint(2, 6)  # 具体的惩罚值
                 user_data['length'] = max(1, user_data['length'] - extra_loss)
                 text += f"\n💔 由于极大优势失败，额外减少 {extra_loss}cm！"
-            elif abs(u_len - t_len) <= 5 and user_data['hardness'] < target_data['hardness']:
-                text = random.choice(self.niuniu_texts['compare']['hardness_lose']).format(
-                    nickname=nickname
-                )
-            else:
-                text = random.choice(self.niuniu_texts['compare']['lose']).format(
-                    nickname=nickname,
-                    target_nickname=target_data['nickname'],
-                    loss=loss
-                )
-        
+            if abs(u_len - t_len) <= 5 and user_data['hardness'] < target_data['hardness']:
+                text += f"\n💔 {nickname} 因硬度劣势败北！"
+
         # 硬度衰减
         if random.random() < 0.3:
             user_data['hardness'] = max(1, user_data['hardness'] - 1)
         if random.random() < 0.3:
             target_data['hardness'] = max(1, target_data['hardness'] - 1)
-        
+
         self._save_niuniu_lengths()
-        
+
         # 生成结果消息
         result_msg = [
             "⚔️ 【牛牛对决结果】 ⚔️",
@@ -491,16 +491,16 @@ class NiuniuPlugin(Star):
             f"🛡️ {target_data['nickname']}: {self.format_length(old_t_len)} > {self.format_length(target_data['length'])}",
             f"📢 {text}"
         ]
-        
+
         # 添加特殊事件
-        if abs(u_len - t_len) <= 5:
+        if abs(u_len - t_len) <= 5 and random.random() < 0.3:
             result_msg.append("💥 双方势均力敌！")
         if (user_data['hardness'] <= 2 or target_data['hardness'] <= 2) and random.random() < 0.2:
             result_msg.append("💢 双方牛牛因过于柔软发生缠绕，长度减半！")
             user_data['length'] = max(1, user_data['length'] // 2)
             target_data['length'] = max(1, target_data['length'] // 2)
             self._save_niuniu_lengths()
-        if diff < 10 and random.random() < 0.1:  # 添加长度差距小于10的特殊触发方式
+        if abs(u_len - t_len) < 10 and random.random() < 0.1: 
             result_msg.append(self.niuniu_texts['compare']['double_loss'].format(nickname1=nickname, nickname2=target_data['nickname']))
             user_data['length'] = max(1, user_data['length'] // 2)
             target_data['length'] = max(1, target_data['length'] // 2)
