@@ -25,6 +25,12 @@ dajiao:
     - "{nickname}，哎呀，打胶过度，牛牛像被霜打的茄子，缩短了{change}cm呢"
     - "{nickname}，用力过猛，牛牛惨遭重创，缩短了{change}cm，心疼它三秒钟"
     - "{nickname}，这波操作不太妙，牛牛缩水了{change}cm，下次悠着点啊！"
+  decrease_30min:
+    - "{nickname}，你这玩牛牛的手法堪称“独特”，左一下右一下，长度直接减少了{change}cm，再这么玩，它都要“哭”啦！"
+    - "{nickname}，你玩牛牛的时候怕是在想别的事儿吧，心不在焉的，让它缩短了{change}cm，可得长点心！"
+    - "{nickname}，你这玩牛牛的操作就像拆盲盒，专挑最差的那种，直接让它缩水了{change}cm，下次可别再这么莽啦！"
+    - "{nickname}，玩牛牛你是一点也不手软，结果用力过猛，它直接缩短{change}cm，这下知道心疼了吧！"
+    - "{nickname}，你玩牛牛就像搞破坏，七搞八搞的，长度少了{change}cm，看它以后还听不听你的话！"
   no_effect:
     - "{nickname}，你的牛牛还没恢复，你打胶也没啥效果哦"
     - "{nickname}，牛牛没缓过来，你这次打胶白费劲啦"
