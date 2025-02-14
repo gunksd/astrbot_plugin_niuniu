@@ -76,7 +76,7 @@ my_niuniu:
       - "🗻如同珠穆朗玛峰，顶天立地。"
       - "🌊好似无边无际的海洋，浩瀚无垠。"
       - "🛸如同外星飞船，神秘莫测。"
-  info: "{nickname}，你的牛牛长度为{length_str}，{evaluation}"
+  info: "{nickname}，你的牛牛长度为{length}，{evaluation}"
   not_registered: "{nickname}，你还没有注册牛牛，请先发送“注册牛牛”进行注册。"
 
 # 比划比划相关文本
