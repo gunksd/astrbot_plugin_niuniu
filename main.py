@@ -3,6 +3,7 @@ import yaml
 import os
 import re
 import time
+import json
 from astrbot.api.all import *
 
 # 常量定义
@@ -28,6 +29,7 @@ class NiuniuPlugin(Star):
         self.last_dajiao_time = {}      # {str(group_id): {str(user_id): last_time}}
         self.last_compare_time = {}     # {str(group_id): {str(user_id): {str(target_id): last_time}}}
         self.last_actions = self._load_last_actions()
+        self.admins = self._load_admins()  # 加载管理员列表
 
     # region 数据管理
     def _create_niuniu_lengths_file(self):
@@ -76,6 +78,10 @@ class NiuniuPlugin(Star):
                     "🎉 {nickname} 的牛牛茁壮成长！+{change}cm"
                 ],
                 'decrease': [
+                    "😱 {nickname} 用力过猛！长度减少 {change}cm！",
+                    "⚠️ {nickname} 操作失误！-{change}cm"
+                ],
+                'decrease_30min': [
                     "😱 {nickname} 用力过猛！长度减少 {change}cm！",
                     "⚠️ {nickname} 操作失误！-{change}cm"
                 ],
@@ -177,6 +183,20 @@ class NiuniuPlugin(Star):
                 yaml.dump(self.last_actions, f, allow_unicode=True)
         except Exception as e:
             self.context.logger.error(f"保存冷却数据失败: {str(e)}")
+
+    def _load_admins(self):
+        """加载管理员列表"""
+        try:
+            with open(os.path.join('data', 'cmd_config.json'), 'r', encoding='utf-8-sig') as f:
+                config = json.load(f)
+                return config.get('admins_id', [])
+        except Exception as e:
+            self.context.logger.error(f"加载管理员列表失败: {str(e)}")
+            return []
+
+    def is_admin(self, user_id):
+        """检查用户是否为管理员"""
+        return str(user_id) in self.admins
     # endregion
 
     # region 工具方法
@@ -190,7 +210,7 @@ class NiuniuPlugin(Star):
         """获取群组数据"""
         group_id = str(group_id)
         if (group_id) not in self.niuniu_lengths:
-            self.niuniu_lengths[group_id] = {'plugin_enabled': True}
+            self.niuniu_lengths[group_id] = {'plugin_enabled': False}
         return self.niuniu_lengths[group_id]
 
     def get_user_data(self, group_id, user_id):
@@ -274,6 +294,13 @@ class NiuniuPlugin(Star):
     async def _toggle_plugin(self, event, enable):
         """开关插件"""
         group_id = str(event.message_obj.group_id)
+        user_id = str(event.get_sender_id())
+
+        # 检查是否为管理员
+        if not self.is_admin(user_id):
+            yield event.plain_result("❌ 只有管理员才能使用此指令")
+            return
+
         self.get_group_data(group_id)['plugin_enabled'] = enable
         self._save_niuniu_lengths()
         text_key = 'enable' if enable else 'disable'
@@ -286,7 +313,7 @@ class NiuniuPlugin(Star):
         nickname = event.get_sender_name()
         
         group_data = self.get_group_data(group_id)
-        if user_id in group_data:
+        if (user_id) in group_data:
             text = self.niuniu_texts['register']['already_registered'].format(nickname=nickname)
             yield event.plain_result(text)
             return
@@ -341,6 +368,7 @@ class NiuniuPlugin(Star):
                 change = random.randint(2, 5)
             elif rand < 0.7: # 30% 减少
                 change = -random.randint(1, 3)
+                template = random.choice(self.niuniu_texts['dajiao']['decrease'])
         else:  # 30分钟后
             rand = random.random()
             if rand < 0.7:  # 70% 增加
@@ -348,6 +376,7 @@ class NiuniuPlugin(Star):
                 user_data['hardness'] = min(user_data['hardness'] + 1, 10)
             elif rand < 0.9: # 20% 减少
                 change = -random.randint(1, 2)
+                template = random.choice(self.niuniu_texts['dajiao']['decrease_30min'])
 
         # 应用变化
         user_data['length'] = max(1, user_data['length'] + change)
@@ -359,7 +388,7 @@ class NiuniuPlugin(Star):
         if change > 0:
             template = random.choice(self.niuniu_texts['dajiao']['increase'])
         elif change < 0:
-            template = random.choice(self.niuniu_texts['dajiao']['decrease'])
+            template = template  
         else:
             template = random.choice(self.niuniu_texts['dajiao']['no_effect'])
         
@@ -493,18 +522,25 @@ class NiuniuPlugin(Star):
         ]
 
         # 添加特殊事件
-        if abs(u_len - t_len) <= 5 and random.random() < 0.3:
+        special_event_triggered = False
+
+        if abs(u_len - t_len) <= 5 and random.random() < 0.075:
             result_msg.append("💥 双方势均力敌！")
-        if (user_data['hardness'] <= 2 or target_data['hardness'] <= 2) and random.random() < 0.2:
+            special_event_triggered = True
+
+        if not special_event_triggered and (user_data['hardness'] <= 2 or target_data['hardness'] <= 2) and random.random() < 0.05:
             result_msg.append("💢 双方牛牛因过于柔软发生缠绕，长度减半！")
             user_data['length'] = max(1, user_data['length'] // 2)
             target_data['length'] = max(1, target_data['length'] // 2)
-            self._save_niuniu_lengths()
-        if abs(u_len - t_len) < 10 and random.random() < 0.1: 
+            special_event_triggered = True
+
+        if not special_event_triggered and abs(u_len - t_len) < 10 and random.random() < 0.025:
             result_msg.append(self.niuniu_texts['compare']['double_loss'].format(nickname1=nickname, nickname2=target_data['nickname']))
             user_data['length'] = max(1, user_data['length'] // 2)
             target_data['length'] = max(1, target_data['length'] // 2)
-            self._save_niuniu_lengths()
+            special_event_triggered = True
+
+        self._save_niuniu_lengths()
 
         yield event.plain_result("\n".join(result_msg))
 
