@@ -53,9 +53,9 @@ class NiuniuPlugin(Star):
             for group_id in list(data.keys()):
                 group_data = data[group_id]
                 if not isinstance(group_data, dict):
-                    data[group_id] = {'plugin_enabled': True}
+                    data[group_id] = {'plugin_enabled': False}
                 elif 'plugin_enabled' not in group_data:
-                    group_data['plugin_enabled'] = True
+                    group_data['plugin_enabled'] = False
             return data
         except Exception as e:
             self.context.logger.error(f"加载数据失败: {str(e)}")
@@ -209,8 +209,8 @@ class NiuniuPlugin(Star):
     def get_group_data(self, group_id):
         """获取群组数据"""
         group_id = str(group_id)
-        if (group_id) not in self.niuniu_lengths:
-            self.niuniu_lengths[group_id] = {'plugin_enabled': False}
+        if group_id not in self.niuniu_lengths:
+            self.niuniu_lengths[group_id] = {'plugin_enabled': False}  # 默认关闭插件
         return self.niuniu_lengths[group_id]
 
     def get_user_data(self, group_id, user_id):
@@ -311,9 +311,13 @@ class NiuniuPlugin(Star):
         group_id = str(event.message_obj.group_id)
         user_id = str(event.get_sender_id())
         nickname = event.get_sender_name()
-        
+
         group_data = self.get_group_data(group_id)
-        if (user_id) in group_data:
+        if not group_data.get('plugin_enabled', False):
+            yield event.plain_result("❌ 插件未启用")
+            return
+
+        if user_id in group_data:
             text = self.niuniu_texts['register']['already_registered'].format(nickname=nickname)
             yield event.plain_result(text)
             return
@@ -325,7 +329,7 @@ class NiuniuPlugin(Star):
             'hardness': 1
         }
         self._save_niuniu_lengths()
-        
+
         text = self.niuniu_texts['register']['success'].format(
             nickname=nickname,
             length=group_data[user_id]['length'],
@@ -338,7 +342,12 @@ class NiuniuPlugin(Star):
         group_id = str(event.message_obj.group_id)
         user_id = str(event.get_sender_id())
         nickname = event.get_sender_name()
-        
+
+        group_data = self.get_group_data(group_id)
+        if not group_data.get('plugin_enabled', False):
+            yield event.plain_result("❌ 插件未启用")
+            return
+
         user_data = self.get_user_data(group_id, user_id)
         if not user_data:
             text = self.niuniu_texts['dajiao']['not_registered'].format(nickname=nickname)
@@ -351,7 +360,7 @@ class NiuniuPlugin(Star):
         if on_cooldown:
             mins = int(remaining // 60) + 1
             text = random.choice(self.niuniu_texts['dajiao']['cooldown']).format(
-                nickname=nickname, 
+                nickname=nickname,
                 remaining=mins
             )
             yield event.plain_result(text)
@@ -391,7 +400,7 @@ class NiuniuPlugin(Star):
             template = template  
         else:
             template = random.choice(self.niuniu_texts['dajiao']['no_effect'])
-        
+
         text = template.format(nickname=nickname, change=abs(change))
         yield event.plain_result(f"{text}\n当前长度：{self.format_length(user_data['length'])}")
 
@@ -400,7 +409,12 @@ class NiuniuPlugin(Star):
         group_id = str(event.message_obj.group_id)
         user_id = str(event.get_sender_id())
         nickname = event.get_sender_name()
-        
+
+        group_data = self.get_group_data(group_id)
+        if not group_data.get('plugin_enabled', False):
+            yield event.plain_result("❌ 插件未启用")
+            return
+
         # 获取自身数据
         user_data = self.get_user_data(group_id, user_id)
         if not user_data:
@@ -436,8 +450,15 @@ class NiuniuPlugin(Star):
             yield event.plain_result(text)
             return
 
-        # 更新冷却时间
+        # 检查10分钟内比划次数
+        compare_count = self.last_compare_time.setdefault(group_id, {}).setdefault(user_id, {}).get('count', 0)
+        if compare_count >= 3:
+            yield event.plain_result("❌ 10分钟内只能比划三次")
+            return
+
+        # 更新冷却时间和比划次数
         compare_records[target_id] = time.time()
+        self.last_compare_time[group_id][user_id]['count'] = compare_count + 1
 
         # 计算胜负
         u_len = user_data['length']
@@ -549,7 +570,12 @@ class NiuniuPlugin(Star):
         group_id = str(event.message_obj.group_id)
         user_id = str(event.get_sender_id())
         nickname = event.get_sender_name()
-        
+
+        group_data = self.get_group_data(group_id)
+        if not group_data.get('plugin_enabled', False):
+            yield event.plain_result("❌ 插件未启用")
+            return
+
         user_data = self.get_user_data(group_id, user_id)
         if not user_data:
             yield event.plain_result(self.niuniu_texts['my_niuniu']['not_registered'].format(nickname=nickname))
@@ -582,20 +608,24 @@ class NiuniuPlugin(Star):
         """显示排行榜"""
         group_id = str(event.message_obj.group_id)
         group_data = self.get_group_data(group_id)
-        
+
+        if not group_data.get('plugin_enabled', False):
+            yield event.plain_result("❌ 插件未启用")
+            return
+
         # 过滤有效用户数据
         valid_users = [
-            (uid, data) for uid, data in group_data.items() 
+            (uid, data) for uid, data in group_data.items()
             if isinstance(data, dict) and 'length' in data
         ]
-        
+
         if not valid_users:
             yield event.plain_result(self.niuniu_texts['ranking']['no_data'])
             return
 
         # 排序并取前10
         sorted_users = sorted(valid_users, key=lambda x: x[1]['length'], reverse=True)[:10]
-        
+
         # 构建排行榜
         ranking = [self.niuniu_texts['ranking']['header']]
         for idx, (uid, data) in enumerate(sorted_users, 1):
@@ -606,7 +636,7 @@ class NiuniuPlugin(Star):
                     length=self.format_length(data['length'])
                 )
             )
-        
+
         yield event.plain_result("\n".join(ranking))
 
     async def _show_menu(self, event):
