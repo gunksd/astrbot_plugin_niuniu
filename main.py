@@ -13,7 +13,7 @@ NIUNIU_LENGTHS_FILE = os.path.join('data', 'niuniu_lengths.yml')
 NIUNIU_TEXTS_FILE = os.path.join(PLUGIN_DIR, 'niuniu_game_texts.yml')
 LAST_ACTION_FILE = os.path.join(PLUGIN_DIR, 'last_actions.yml')
 
-@register("niuniu_plugin", "长安某", "牛牛插件，包含注册牛牛、打胶、我的牛牛、比划比划、牛牛排行等功能", "3.4.1")
+@register("niuniu_plugin", "长安某", "牛牛插件，包含注册牛牛、打胶、我的牛牛、比划比划、牛牛排行等功能", "3.4.2")
 class NiuniuPlugin(Star):
     # 冷却时间常量（秒）
     COOLDOWN_10_MIN = 600    # 10分钟
@@ -451,14 +451,24 @@ class NiuniuPlugin(Star):
             return
 
         # 检查10分钟内比划次数
-        compare_count = self.last_compare_time.setdefault(group_id, {}).setdefault(user_id, {}).get('count', 0)
+        compare_records = self.last_compare_time.setdefault(group_id, {}).setdefault(user_id, {})
+        last_compare_time = compare_records.get('last_time', 0)
+        current_time = time.time()
+
+        # 如果超过10分钟，重置计数
+        if current_time - last_compare_time > 600:
+            compare_count = 0
+            compare_records['count'] = 0
+        else:
+            compare_count = compare_records.get('count', 0)
+
         if compare_count >= 3:
             yield event.plain_result("❌ 10分钟内只能比划三次")
             return
 
         # 更新冷却时间和比划次数
-        compare_records[target_id] = time.time()
-        self.last_compare_time[group_id][user_id]['count'] = compare_count + 1
+        compare_records['last_time'] = current_time
+        compare_records['count'] = compare_count + 1
 
         # 计算胜负
         u_len = user_data['length']
