@@ -457,17 +457,17 @@ class NiuniuPlugin(Star):
 
         # 如果超过10分钟，重置计数
         if current_time - last_compare_time > 600:
-            compare_count = 0
             compare_records['count'] = 0
-        else:
-            compare_count = compare_records.get('count', 0)
+            compare_records['last_time'] = current_time  # 更新最后比划时间
+
+        compare_count = compare_records.get('count', 0)
 
         if compare_count >= 3:
             yield event.plain_result("❌ 10分钟内只能比划三次")
             return
 
         # 更新冷却时间和比划次数
-        compare_records['last_time'] = current_time
+        compare_records[target_id] = current_time
         compare_records['count'] = compare_count + 1
 
         # 计算胜负
