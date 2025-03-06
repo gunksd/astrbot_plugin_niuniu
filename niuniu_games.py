@@ -24,7 +24,7 @@ class NiuniuGames:
             yield event.plain_result("❌ 请先注册牛牛")
             return
 
-        # 检查是否已经在
+        # 检查是否已经在冲
         if user_data.get('is_rushing', False):
             remaining_time = user_data['rush_start_time'] + 1800 - time.time()
             if remaining_time > 0:
@@ -51,7 +51,7 @@ class NiuniuGames:
             yield event.plain_result("❌ 请先注册牛牛")
             return
 
-        # 检查是否在
+        # 检查是否在冲
         if not user_data.get('is_rushing', False):
             yield event.plain_result(f"❌ {nickname} 你当前没有在冲")
             return
@@ -68,7 +68,7 @@ class NiuniuGames:
         work_time = min(work_time, 1800)  # 30分钟 = 1800秒
 
         # 动态计算金币奖励
-        coins_per_minute = random.randint(5, 10)
+        coins_per_minute = random.randint(1, 2)
         coins = int((work_time / 60) * coins_per_minute)
 
         # 更新用户金币
@@ -80,6 +80,7 @@ class NiuniuGames:
         # 重置状态
         user_data['is_rushing'] = False
         self.main._save_niuniu_lengths()
+
     async def fly_plane(self, event: AstrMessageEvent):
         """飞机游戏"""
         group_id = str(event.message_obj.group_id)
@@ -129,10 +130,11 @@ class NiuniuGames:
 
     def update_user_coins(self, group_id: str, user_id: str, coins: float):
         """更新用户金币"""
-        user_data = self.get_user_data(group_id, user_id)
+        user_data = self.main.get_user_data(group_id, user_id)
         if user_data:
             user_data['coins'] = user_data.get('coins', 0) + coins
-            self._save_niuniu_lengths()
+            self.main._save_niuniu_lengths()
+
     def get_user_coins(self, group_id: str, user_id: str) -> float:
         """获取用户金币"""
         user_data = self.main.get_user_data(group_id, user_id)
