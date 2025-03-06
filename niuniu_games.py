@@ -61,7 +61,7 @@ class NiuniuGames:
 
         # 如果时间少于10分钟，没有奖励
         if work_time < 600:  # 10分钟 = 600秒
-            yield event.plain_result(f"❌ {nickname} 没有冲够10分钟，没有奖励！")
+            yield event.plain_result(f"❌ {nickname} 至少冲够十分钟才能停")
             return
 
         # 如果时间超过30分钟，按30分钟计算
@@ -107,13 +107,13 @@ class NiuniuGames:
             yield event.plain_result(f"✈️ 油箱空了，{nickname} {mins}分钟后可再起飞")
             return
 
-        # 定义不同的飞行事件
+        # 飞行事件
         fly_events = [
-            {"description": "短途路线", "coins": random.randint(50, 70)},
-            {"description": "国际航班", "coins": random.randint(80, 100)},
-            {"description": "平安抵达", "coins": random.randint(60, 80)},
-            {"description": "遇到冷空气", "coins": random.randint(40, 60)},
-            {"description": "顺利抵达", "coins": random.randint(70, 90)}
+            {"description": "牛牛没赶上飞机，不过也算出来透了口气", "coins": random.randint(20, 40)},
+            {"description": "竟然赶上了国际航班，遇到了兴奋的大母猴", "coins": random.randint(80, 100)},
+            {"description": "无惊无险，牛牛顺利抵达目的地", "coins": random.randint(70,80)},
+            {"description": "牛牛刚出来就遇到了冷空气，冻得像个鹌鹑似的", "coins": random.randint(40, 60)},
+            {"description": "牛牛好像到奇怪的地方，不过也算是完成了目标", "coins": random.randint(60, 80)}
         ]
 
         # 随机选择一个事件
