@@ -15,11 +15,11 @@ class NiuniuShop:
             {
                 'id': 1,
                 'name': "妙脆角",
-                'type': 'passive',
-                'max': 3,
-                'desc': "🛡️ 防止一次长度减半（可持有3个）",
-                'effect': 'prevent_halving',
-                'price': 70  # 商品价格
+                'type': 'passive', 
+                'max': 3, 
+                'desc': "🛡️ 防止一次长度减半",
+                'effect': 'prevent_halving', 
+                'price': 70 
             },
             {
                 'id': 2,
@@ -27,7 +27,7 @@ class NiuniuShop:
                 'type': 'active',
                 'desc': "💎 立即增加3点硬度",
                 'effect': {'hardness': 3},
-                'price': 50  # 商品价格
+                'price': 50  
             },
             {
                 'id': 3,
@@ -35,15 +35,16 @@ class NiuniuShop:
                 'type': 'active',
                 'desc': "📏 立即增加20cm长度，但会减少2点硬度",
                 'effect': {'length': 20, 'hardness': -2},
-                'price': 50  # 商品价格
+                'price': 50 
             },
             {
                 'id': 4,
                 'name': "淬火爪刀",
-                'type': 'active',
+                'type': 'passive',
+                'max': 2, 
                 'desc': "🔥 触发掠夺时，额外掠夺10%长度",
                 'effect': 'bonus_loot',
-                'price': 70  # 商品价格
+                'price': 70
             },
             {
                 'id': 5,
@@ -51,25 +52,26 @@ class NiuniuShop:
                 'type': 'active',
                 'desc': "直接增加30cm长度",
                 'effect': {'length': 30},
-                'price': 70  # 商品价格
+                'price': 100  
             },
             {
                 'id': 6,
                 'name': "余震",
                 'type': 'passive',
-                'max': 2,
+                'max': 3,
                 'desc': "被比划时，如果失败，不扣长度",
                 'effect': 'no_deduct_on_fail',
-                'price': 100  # 商品价格
+                'price': 100  
             },
             {
                 'id': 7,
-                'name': "致命节奏",
-                'type': 'passive',
-                'max': 1,
-                'desc': "短时间内多次打胶，同时不受30分钟内连续打胶的debuff",
-                'effect': 'no_30min_debuff',
-                'price': 350  # 商品价格
+                'name': "致命节奏",  # 道具名称
+                'type': 'passive',  # 道具类型：passive-被动道具，active-主动道具
+                'max': 6,  # 最大持有量
+                'quantity': 3,  # 每次购买获得3个,如需修改其它道具每次购买获取数量请直接添加此字段
+                'desc': "短时间内多次打胶，同时不受30分钟内连续打胶的debuff（可持有3个）",
+                'effect': 'no_30min_debuff', # 道具效果
+                'price': 100 # 商品价格
             },
             {
                 'id': 8,
@@ -77,7 +79,7 @@ class NiuniuShop:
                 'type': 'active',
                 'desc': "💥 长度直接+1m，硬度+10",
                 'effect': {'length': 100, 'hardness': 10},
-                'price': 500  # 商品价格
+                'price': 500  
             },
             {
                 'id': 9,
@@ -85,7 +87,7 @@ class NiuniuShop:
                 'type': 'active',
                 'desc': "在比划时，有50%的概率夺取对方全部长度，10%的概率清空自己的长度，40%的概率无效",
                 'effect': 'steal_or_clear',
-                'price': 500  # 商品价格
+                'price': 600  # 商品价格
             }
         ]
         
