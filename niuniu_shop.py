@@ -137,6 +137,7 @@ class NiuniuShop:
 
         # 初始化用户数据（兼容旧版）
         user_data.setdefault('items', {})
+        user_data.setdefault('coins', 0)  # 添加金币字段的初始化
 
         # 获取用户金币
         user_coins = self.get_user_coins(group_id, user_id)
@@ -171,14 +172,14 @@ class NiuniuShop:
 
             self.main._save_niuniu_lengths()
             yield event.plain_result("✅ 购买成功\n" + "\n".join(result_msg))
-            
+        
         except Exception as e:
             self.main.context.logger.error(f"购买失败: {str(e)}")
             yield event.plain_result("⚠️ 购买过程中出现错误，请稍后再试")
 
     def get_sign_coins(self, group_id: str, user_id: str) -> float:
         """获取签到插件的金币"""
-        sign_data_path = os.path.join('data', 'plugins', 'astrbot_plugin_sign', 'sign_data.yml')
+        sign_data_path = os.path.join('data', 'sign_data.yml')
         if not os.path.exists(sign_data_path):
             return 0.0
 
@@ -189,7 +190,7 @@ class NiuniuShop:
 
     def update_sign_coins(self, group_id: str, user_id: str, coins: float):
         """更新签到插件的金币"""
-        sign_data_path = os.path.join('data', 'plugins', 'astrbot_plugin_sign', 'sign_data.yml')
+        sign_data_path = os.path.join('data', 'sign_data.yml')
         if not os.path.exists(sign_data_path):
             with open(sign_data_path, 'w', encoding='utf-8') as f:
                 yaml.dump({}, f)
@@ -206,13 +207,13 @@ class NiuniuShop:
     def get_new_game_coins(self, group_id: str, user_id: str) -> float:
         """获取新游戏的金币"""
         user_data = self.main.get_user_data(group_id, user_id)
-        return user_data.get('new_game_coins', 0) if user_data else 0
+        return user_data.get('coins', 0) if user_data else 0
 
     def update_new_game_coins(self, group_id: str, user_id: str, coins: float):
         """更新新游戏的金币"""
         user_data = self.main.get_user_data(group_id, user_id)
         if user_data:
-            user_data['new_game_coins'] = coins
+            user_data['coins'] = coins
             self.main._save_niuniu_lengths()
 
     def get_user_coins(self, group_id: str, user_id: str) -> float:
@@ -237,6 +238,8 @@ class NiuniuShop:
     def get_user_items(self, group_id: str, user_id: str) -> Dict[str, int]:
         """获取用户道具"""
         user_data = self.main.get_user_data(group_id, user_id)
+        if user_data is None:
+            return {}
         return user_data.get('items', {})
 
     def consume_item(self, group_id: str, user_id: str, item_name: str) -> bool:
