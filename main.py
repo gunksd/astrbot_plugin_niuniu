@@ -667,7 +667,7 @@ class NiuniuPlugin(Star):
             original_length = user_data['length']  # 记录原始长度
             user_data['length'] = max(1, user_data['length'] // 2)
             target_data['length'] = max(1, target_data['length'] // 2)
-            result_msg.append("葟 双方牛牛因过于柔软发生缠绕，长度减半！")
+            result_msg.append("双方牛牛因过于柔软发生缠绕，长度减半！")
             special_event_triggered = True
             
             if self.shop.get_user_items(group_id, user_id).get("妙脆角", 0) > 0:
