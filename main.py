@@ -5,7 +5,7 @@ import re
 import time
 import json
 import sys
-import asyncio  # 用于疯狂打胶的间隔等待
+import asyncio  # 用于异步操作
 from astrbot.api.all import *
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from niuniu_shop import NiuniuShop
@@ -21,7 +21,8 @@ LAST_ACTION_FILE = os.path.join(PLUGIN_DIR, 'last_actions.yml')
 @register("niuniu_plugin", "长安某", "牛牛插件，包含注册牛牛、打胶、疯狂打胶、我的牛牛、比划比划、牛牛排行等功能", "3.4.2")
 class NiuniuPlugin(Star):
     # 冷却时间常量（秒）
-    COOLDOWN_DAJIAO = 30    # 打胶冷却30秒
+    COOLDOWN_DAJIAO = 30    # 普通打胶冷却30秒
+    COOLDOWN_CRAZY_DAJIAO = 60  # 疯狂打胶功能整体冷却1分钟
     COMPARE_COOLDOWN = 600  # 比划冷却10分钟
     INVITE_LIMIT = 3        # 邀请次数限制
 
@@ -99,9 +100,6 @@ class NiuniuPlugin(Star):
                 'not_registered': "❌ {nickname} 请先注册牛牛"
             },
             'crazy_dajiao': {
-                'cooldown': [
-                    "⏳ {nickname} 疯狂打胶正在冷却，稍后再来！",
-                ],
                 'increase': [
                     "🚀 {nickname} 疯狂打胶成功！牛牛暴涨 {change}cm！",
                     "🎉 {nickname} 的牛牛狂暴生长！+{change}cm"
@@ -113,7 +111,8 @@ class NiuniuPlugin(Star):
                 'no_effect': [
                     "🌀 {nickname} 疯狂打胶后牛牛毫无变化...",
                     "🔄 {nickname} 的疯狂打胶结果平平"
-                ]
+                ],
+                'evaluation': "【疯狂打胶评价】{nickname} 的牛牛最终长度为 {length}，评价：{evaluation}"
             },
             'my_niuniu': {
                 'info': "📊 {nickname} 的牛牛状态\n📏 长度：{length}\n💪 硬度：{hardness}\n📝 评价：{evaluation}",
@@ -156,7 +155,7 @@ class NiuniuPlugin(Star):
                 'default': """📜 牛牛菜单：
 🔹 注册牛牛 - 初始化你的牛牛
 🔹 打胶 - 提升牛牛长度
-🔹 疯狂打胶 - 连续打胶十次，体验极限挑战
+🔹 疯狂打胶 - 连续打胶十次（无单次冷却），功能整体1分钟冷却
 🔹 我的牛牛 - 查看当前状态
 🔹 比划比划 @目标 - 发起对决
 🔹 牛牛排行 - 查看群排行榜
@@ -459,7 +458,7 @@ class NiuniuPlugin(Star):
         yield event.plain_result(f"{final_text}\n当前长度：{self.format_length(user_data['length'])}")
 
     async def _crazy_dajiao(self, event: AstrMessageEvent):
-        """疯狂打胶功能，连续打胶十次，每次间隔1分钟"""
+        """疯狂打胶功能：启动后立即连续执行十次打胶（无单次冷却），结束后给出评价，整体冷却1分钟"""
         group_id = str(event.message_obj.group_id)
         user_id = str(event.get_sender_id())
         nickname = event.get_sender_name()
@@ -475,10 +474,18 @@ class NiuniuPlugin(Star):
             yield event.plain_result(text)
             return
 
-        yield event.plain_result(f"【疯狂打胶开始】{nickname} 将连续打胶十次，每次间隔1分钟，请耐心等待...")
+        # 检查疯狂打胶整体冷却
+        crazy_last_time = self.last_actions.setdefault(group_id, {}).setdefault(user_id, {}).get('crazy_dajiao', 0)
+        on_cooldown, remaining = self.check_cooldown(crazy_last_time, self.COOLDOWN_CRAZY_DAJIAO)
+        if on_cooldown:
+            sec = int(remaining) + 1
+            yield event.plain_result(f"⏳ {nickname} 疯狂打胶功能冷却中，请等待{sec}秒后再试")
+            return
 
+        yield event.plain_result(f"【疯狂打胶开始】{nickname} 将连续打胶十次，无冷却间隔，请看效果……")
+
+        # 连续执行十次打胶，无单次冷却延时
         for i in range(1, 11):
-            await asyncio.sleep(60)  # 每次间隔1分钟
             rand = random.random()
             if rand < 0.4:
                 change = random.randint(2, 5)
@@ -494,7 +501,31 @@ class NiuniuPlugin(Star):
             message = f"[第{i}次] {template.format(nickname=nickname, change=abs(change))}\n当前长度：{self.format_length(user_data['length'])}"
             yield event.plain_result(message)
         
-        yield event.plain_result(f"【疯狂打胶结束】{nickname} 的最终牛牛长度：{self.format_length(user_data['length'])}")
+        # 更新疯狂打胶冷却时间
+        self.last_actions.setdefault(group_id, {}).setdefault(user_id, {})['crazy_dajiao'] = time.time()
+        self._save_last_actions()
+        
+        # 计算评价语（参考我的牛牛评价标准）
+        final_length = user_data['length']
+        if final_length < 12:
+            evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['short'])
+        elif final_length < 25:
+            evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['medium'])
+        elif final_length < 50:
+            evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['long'])
+        elif final_length < 100:
+            evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['very_long'])
+        elif final_length < 200:
+            evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['super_long'])
+        else:
+            evaluation = random.choice(self.niuniu_texts['my_niuniu']['evaluation']['ultra_long'])
+        
+        eval_text = self.niuniu_texts['crazy_dajiao']['evaluation'].format(
+            nickname=nickname,
+            length=self.format_length(final_length),
+            evaluation=evaluation
+        )
+        yield event.plain_result(f"【疯狂打胶结束】{eval_text}")
 
     async def _compare(self, event):
         """比划功能"""
