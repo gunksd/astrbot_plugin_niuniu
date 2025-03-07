@@ -271,8 +271,6 @@ class NiuniuPlugin(Star):
         group_data = self.get_group_data(group_id)
 
         msg = event.message_str.strip()
-
-        # 始终处理“牛牛开”、“牛牛关”和“牛牛菜单”指令，无论插件是否启用
         if msg.startswith("牛牛开"):
             async for result in self._toggle_plugin(event, True):
                 yield result
@@ -285,11 +283,9 @@ class NiuniuPlugin(Star):
             async for result in self._show_menu(event):
                 yield result
             return
-
         # 如果插件未启用，忽略其他所有消息
         if not group_data.get('plugin_enabled', False):
             return
-
         # 处理其他命令
         if msg.startswith("开冲"):
             async for result in self.games.start_rush(event):
@@ -315,6 +311,12 @@ class NiuniuPlugin(Star):
 
             for cmd, handler in handler_map.items():
                 if msg.startswith(cmd):
+                    # 检查是否正在开冲
+                    user_id = str(event.get_sender_id())
+                    user_data = self.get_user_data(group_id, user_id)
+                    if user_data and user_data.get('is_rushing', False):
+                        yield event.plain_result("❌ 牛牛快冲晕了，还做不了其他事情，要不先停止开冲？")
+                        return
                     async for result in handler(event):
                         yield result
                     return
