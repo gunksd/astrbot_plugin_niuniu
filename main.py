@@ -112,7 +112,7 @@ class NiuniuPlugin(Star):
                     "🌀 {nickname} 疯狂打胶后牛牛毫无变化...",
                     "🔄 {nickname} 的疯狂打胶结果平平"
                 ],
-                'evaluation': "【疯狂打胶评价】{nickname} 的牛牛最终长度为 {length}，评价：{evaluation}"
+                'evaluation': "【疯狂打胶十次结束】 {nickname} 的牛牛最终长度为 {length}，评价：{evaluation}"
             },
             'my_niuniu': {
                 'info': "📊 {nickname} 的牛牛状态\n📏 长度：{length}\n💪 硬度：{hardness}\n📝 评价：{evaluation}",
@@ -437,7 +437,7 @@ class NiuniuPlugin(Star):
         yield event.plain_result(f"{final_text}\n当前长度：{self.format_length(user_data['length'])}")
 
     async def _crazy_dajiao(self, event: AstrMessageEvent):
-        """疯狂打胶功能：启动后立即连续执行十次打胶（无单次冷却），不显示中间过程，仅在最后显示总评价；整体冷却1分钟"""
+        """疯狂打胶功能：启动后连续执行十次打胶，显示每次的长度变化，最后显示一条总的评价；整体冷却1分钟"""
         group_id = str(event.message_obj.group_id)
         user_id = str(event.get_sender_id())
         nickname = event.get_sender_name()
@@ -456,21 +456,23 @@ class NiuniuPlugin(Star):
             sec = int(remaining) + 1
             yield event.plain_result(f"⏳ {nickname} 疯狂打胶功能冷却中，请等待{sec}秒后再试")
             return
-        # 连续执行十次打胶，内部过程不单独显示
-        for i in range(10):
+        messages = []
+        # 连续执行十次打胶，显示每次变化
+        for i in range(1, 11):
             rand = random.random()
             if rand < 0.4:
                 change = random.randint(2, 5)
-                # 此处仅更新数据，不生成中间消息
-                user_data['length'] += change
+                template = random.choice(self.niuniu_texts['crazy_dajiao']['increase'])
             elif rand < 0.7:
                 change = -random.randint(1, 3)
-                user_data['length'] += change
+                template = random.choice(self.niuniu_texts['crazy_dajiao']['decrease'])
             else:
-                # 无效情况
                 change = 0
-                user_data['length'] += change
+                template = random.choice(self.niuniu_texts['crazy_dajiao']['no_effect'])
+            user_data['length'] = user_data['length'] + change
             self._save_niuniu_lengths()
+            round_msg = f"[第{i}次] {template.format(nickname=nickname, change=abs(change))} 当前长度：{self.format_length(user_data['length'])}"
+            messages.append(round_msg)
         # 更新疯狂打胶冷却时间
         self.last_actions.setdefault(group_id, {}).setdefault(user_id, {})['crazy_dajiao'] = time.time()
         self._save_last_actions()
@@ -493,7 +495,8 @@ class NiuniuPlugin(Star):
             length=self.format_length(final_length),
             evaluation=evaluation
         )
-        yield event.plain_result(f"【疯狂打胶结束】{eval_text}")
+        messages.append(eval_text)
+        yield event.plain_result("\n".join(messages))
 
     async def _stop_rush_anytime(self, event: AstrMessageEvent):
         """停止开冲功能：随时停止，不要求等待满十分钟"""
