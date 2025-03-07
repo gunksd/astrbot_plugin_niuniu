@@ -482,8 +482,9 @@ class NiuniuPlugin(Star):
             yield event.plain_result(f"⏳ {nickname} 疯狂打胶功能冷却中，请等待{sec}秒后再试")
             return
 
-        yield event.plain_result(f"【疯狂打胶开始】{nickname} 将连续打胶十次，无冷却间隔，请看效果……")
-
+        # 累计结果消息
+        messages = []
+        messages.append(f"【疯狂打胶开始】{nickname} 将连续打胶十次，无冷却间隔，请看效果……")
         # 连续执行十次打胶，无单次冷却延时
         for i in range(1, 11):
             rand = random.random()
@@ -498,8 +499,7 @@ class NiuniuPlugin(Star):
                 template = random.choice(self.niuniu_texts['crazy_dajiao']['no_effect'])
             user_data['length'] = user_data['length'] + change
             self._save_niuniu_lengths()
-            message = f"[第{i}次] {template.format(nickname=nickname, change=abs(change))}\n当前长度：{self.format_length(user_data['length'])}"
-            yield event.plain_result(message)
+            messages.append(f"[第{i}次] {template.format(nickname=nickname, change=abs(change))}\n当前长度：{self.format_length(user_data['length'])}")
         
         # 更新疯狂打胶冷却时间
         self.last_actions.setdefault(group_id, {}).setdefault(user_id, {})['crazy_dajiao'] = time.time()
@@ -525,7 +525,9 @@ class NiuniuPlugin(Star):
             length=self.format_length(final_length),
             evaluation=evaluation
         )
-        yield event.plain_result(f"【疯狂打胶结束】{eval_text}")
+        messages.append(f"【疯狂打胶结束】{eval_text}")
+        # 将所有结果合并成一条消息发送
+        yield event.plain_result("\n".join(messages))
 
     async def _compare(self, event):
         """比划功能"""
