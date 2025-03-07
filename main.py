@@ -63,9 +63,9 @@ class NiuniuPlugin(Star):
                     group_data['plugin_enabled'] = False
                 for user_id in list(group_data.keys()):
                     user_data = group_data[user_id]
-                    if isinstance(user_data, dict) and 'coins' not in user_data:
-                        user_data['coins'] = 0
-            
+                    if isinstance(user_data, dict):
+                        user_data.setdefault('coins', 0)
+                        user_data.setdefault('items', {}) 
             return data
         except Exception as e:
             self.context.logger.error(f"加载数据失败: {str(e)}")
@@ -254,7 +254,7 @@ class NiuniuPlugin(Star):
                 group_id = str(event.message_obj.group_id)
                 group_data = self.get_group_data(group_id)
                 for user_id, user_data in group_data.items():
-                    if isinstance(user_data, dict):  # 检查 user_data 是否为字典
+                    if isinstance(user_data, dict): 
                         nickname = user_data.get('nickname', '')
                         if re.search(re.escape(target_name), nickname, re.IGNORECASE):
                             return user_id
@@ -370,7 +370,8 @@ class NiuniuPlugin(Star):
             'nickname': nickname,
             'length': random.randint(cfg.get('min_length', 3), cfg.get('max_length', 10)),
             'hardness': 1,
-            'coins': 0
+            'coins': 0,
+            'items': {}
         }
         self._save_niuniu_lengths()
 
@@ -663,28 +664,53 @@ class NiuniuPlugin(Star):
         if abs(u_len - t_len) <= 5 and random.random() < 0.075:
             result_msg.append("💥 双方势均力敌！")
             special_event_triggered = True
+        # 硬度过低触发缠绕
         if not special_event_triggered and (user_data['hardness'] <= 2 or target_data['hardness'] <= 2) and random.random() < 0.05:
-            original_length = user_data['length']  # 记录原始长度
-            user_data['length'] = max(1, user_data['length'] // 2)
-            target_data['length'] = max(1, target_data['length'] // 2)
-            result_msg.append("双方牛牛因过于柔软发生缠绕，长度减半！")
-            special_event_triggered = True
+            # 记录双方原始长度
+            original_user_len = user_data['length']
+            original_target_len = target_data['length']
             
+            # 执行减半操作
+            user_data['length'] = max(1, original_user_len // 2)
+            target_data['length'] = max(1, original_target_len // 2)
+            
+            # 检查发起方妙脆角
             if self.shop.get_user_items(group_id, user_id).get("妙脆角", 0) > 0:
-                user_data['length'] = original_length  # 恢复原长度
-                result_msg.append("🛡️ 妙脆角生效，防止了长度减半！")
+                user_data['length'] = original_user_len  # 恢复发起方
+                result_msg.append(f"🛡️ {nickname} 的妙脆角生效，防止了长度减半！")
                 self.shop.consume_item(group_id, user_id, "妙脆角")
+            
+            # 检查目标方妙脆角
+            if self.shop.get_user_items(group_id, target_id).get("妙脆角", 0) > 0:
+                target_data['length'] = original_target_len  # 恢复目标方
+                result_msg.append(f"🛡️ {target_data['nickname']} 的妙脆角生效，防止了长度减半！")
+                self.shop.consume_item(group_id, target_id, "妙脆角")
+            
+            result_msg.append("双方牛牛因过于柔软发生缠绕！")
+            special_event_triggered = True
 
+        # 长度相近触发减半
         if not special_event_triggered and abs(u_len - t_len) < 10 and random.random() < 0.025:
-            original_length = user_data['length']  
-            user_data['length'] = max(1, user_data['length'] // 2)
-            target_data['length'] = max(1, target_data['length'] // 2)
+            original_user_len = user_data['length']
+            original_target_len = target_data['length']
+            
+            user_data['length'] = max(1, original_user_len // 2)
+            target_data['length'] = max(1, original_target_len // 2)
+            
+            # 检查发起方
+            if self.shop.get_user_items(group_id, user_id).get("妙脆角", 0) > 0:
+                user_data['length'] = original_user_len
+                result_msg.append(f"🛡️ {nickname} 的妙脆角生效，防止了长度减半！")
+                self.shop.consume_item(group_id, user_id, "妙脆角")
+            
+            # 检查目标方
+            if self.shop.get_user_items(group_id, target_id).get("妙脆角", 0) > 0:
+                target_data['length'] = original_target_len
+                result_msg.append(f"🛡️ {target_data['nickname']} 的妙脆角生效，防止了长度减半！")
+                self.shop.consume_item(group_id, target_id, "妙脆角")
+            
             result_msg.append(self.niuniu_texts['compare']['double_loss'].format(nickname1=nickname, nickname2=target_data['nickname']))
             special_event_triggered = True
-            if self.shop.get_user_items(group_id, user_id).get("妙脆角", 0) > 0:
-                user_data['length'] = original_length
-                result_msg.append("🛡️ 妙脆角生效，防止了长度减半！")
-                self.shop.consume_item(group_id, user_id, "妙脆角")
 
         self._save_niuniu_lengths()
         yield event.plain_result("\n".join(result_msg))
